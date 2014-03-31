@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -40,7 +40,7 @@ class Surface(qpopplerview.Surface):
     
     def translateUI(self):
         self._msg.setText(_("Could not load the {name} module.").format(
-            name = '<a href="http://python-poppler-qt4.googlecode.com/">popplerqt4</a>'))
+            name = '<a href="https://github.com/wbsoft/python-poppler-qt4">popplerqt4</a>'))
     
     def paintEvent(self, ev):
         super(qpopplerview.Surface, self).paintEvent(ev)

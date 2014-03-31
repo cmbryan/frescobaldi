@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2012 - 2012 by Wilbert Berendsen
+# Copyright (c) 2012 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -103,6 +103,9 @@ class Incoming(object):
         
         win = QApplication.activeWindow()
         if win not in app.windows:
+            if not app.windows:
+                import mainwindow
+                mainwindow.MainWindow().show()
             win = app.windows[0]
         
         if cmd == b'open':

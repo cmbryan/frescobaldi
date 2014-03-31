@@ -1,6 +1,6 @@
 # This file is part of the qpopplerview package.
 #
-# Copyright (c) 2010 - 2012 by Wilbert Berendsen
+# Copyright (c) 2010 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,6 +28,7 @@ class RenderOptions(object):
     def __init__(self):
         self._renderHint = None
         self._paperColor = None
+        self._oversampleThreshold = 0
     
     def read(self, document):
         """Reads rendering options from the given Poppler.Document."""
@@ -58,4 +59,21 @@ class RenderOptions(object):
     def paperColor(self):
         """Returns the currently set paper color."""
         return self._paperColor
+    
+    def setOversampleThreshold(self, value):
+        """Sets the oversample threshold resolution.
+        
+        Below this resolution, the image will be rendered in double size
+        and scaled down, to provide a smoother image. Otherwise, the horizontal
+        lines may appear too thick.
+        
+        The default value is 0, meaning no oversampling.
+        
+        """
+        self._oversampleThreshold = value
+        
+    def oversampleThreshold(self):
+        """Return the current oversample threshold resolution."""
+        return self._oversampleThreshold
+
 

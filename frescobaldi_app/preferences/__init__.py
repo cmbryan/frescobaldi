@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -27,15 +27,14 @@ from __future__ import unicode_literals
 from PyQt4.QtCore import QSettings, QSize, Qt, pyqtSignal
 from PyQt4.QtGui import (
     QDialog, QDialogButtonBox, QGroupBox, QHBoxLayout, QKeySequence,
-    QListWidget, QListWidgetItem, QStackedWidget, QVBoxLayout, QWidget)
+    QListWidget, QListWidgetItem, QScrollArea, QStackedWidget, QVBoxLayout,
+    QWidget)
 
 import app
 import qutil
-import help
+import userguide
 import icons
 import widgets
-
-from . import prefshelp
 
 _prefsindex = 0 # global setting for selected prefs page but not saved on exit
 
@@ -48,6 +47,7 @@ def pageorder():
     yield Paths
     yield Documentation
     yield Shortcuts
+    yield Editor
     yield FontsColors
     yield Tools
 
@@ -57,7 +57,8 @@ class PreferencesDialog(QDialog):
     def __init__(self, mainwindow):
         super(PreferencesDialog, self).__init__(mainwindow)
         self.setWindowModality(Qt.WindowModal)
-        self.addAction(mainwindow.actionCollection.help_whatsthis)
+        if mainwindow:
+            self.addAction(mainwindow.actionCollection.help_whatsthis)
         layout = QVBoxLayout()
         layout.setSpacing(10)
         self.setLayout(layout)
@@ -119,7 +120,7 @@ class PreferencesDialog(QDialog):
             yield self.stack.widget(n)
     
     def showHelp(self):
-        help.help(self.pagelist.currentItem().help)
+        userguide.show(self.pagelist.currentItem().help)
         
     def loadSettings(self):
         """Loads the settings on reset."""
@@ -148,7 +149,7 @@ class PreferencesDialog(QDialog):
 
 
 class PrefsItemBase(QListWidgetItem):
-    help = prefshelp.preferences_dialog
+    help = "preferences"
     def __init__(self):
         super(PrefsItemBase, self).__init__()
         self._widget = None
@@ -167,7 +168,7 @@ class PrefsItemBase(QListWidgetItem):
 
 
 class General(PrefsItemBase):
-    help = prefshelp.preferences_general
+    help = "prefs_general"
     iconName = "preferences-system"
     def translateUI(self):
         self.setText(_("General Preferences"))
@@ -178,7 +179,7 @@ class General(PrefsItemBase):
         
 
 class LilyPond(PrefsItemBase):
-    help = prefshelp.preferences_lilypond
+    help = "prefs_lilypond"
     iconName = "lilypond-run"
     def translateUI(self):
         self.setText(_("LilyPond Preferences"))
@@ -189,7 +190,7 @@ class LilyPond(PrefsItemBase):
 
 
 class Midi(PrefsItemBase):
-    help = prefshelp.preferences_midi
+    help = "prefs_midi"
     iconName = "audio-volume-medium"
     def translateUI(self):
         self.setText(_("MIDI Settings"))
@@ -200,7 +201,7 @@ class Midi(PrefsItemBase):
 
 
 class Helpers(PrefsItemBase):
-    help = prefshelp.preferences_helpers
+    help = "prefs_helpers"
     iconName = "applications-other"
     def translateUI(self):
         self.setText(_("Helper Applications"))
@@ -211,7 +212,7 @@ class Helpers(PrefsItemBase):
 
 
 class Paths(PrefsItemBase):
-    help = prefshelp.preferences_paths
+    help = "prefs_paths"
     iconName = "folder-open"
     def translateUI(self):
         self.setText(_("Paths"))
@@ -222,7 +223,7 @@ class Paths(PrefsItemBase):
 
 
 class Documentation(PrefsItemBase):
-    help = prefshelp.preferences_documentation
+    help = "prefs_lilydoc"    
     iconName = "help-contents"
     def translateUI(self):
         self.setText(_("LilyPond Documentation"))
@@ -233,7 +234,7 @@ class Documentation(PrefsItemBase):
 
 
 class Shortcuts(PrefsItemBase):
-    help = prefshelp.preferences_shortcuts
+    help = "prefs_shortcuts"
     iconName = "preferences-desktop-keyboard-shortcuts"
     def translateUI(self):
         self.setText(_("Keyboard Shortcuts"))
@@ -243,8 +244,19 @@ class Shortcuts(PrefsItemBase):
         return shortcuts.Shortcuts(dlg)
         
 
+class Editor(PrefsItemBase):
+    help = "prefs_editor"
+    iconName = "document-properties"
+    def translateUI(self):
+        self.setText(_("Editor Preferences"))
+        
+    def widget(self, dlg):
+        import editor
+        return editor.Editor(dlg)
+
+
 class FontsColors(PrefsItemBase):
-    help = prefshelp.preferences_fontscolors
+    help = "prefs_fontscolors"
     iconName = "applications-graphics"
     def translateUI(self):
         self.setText(_("Fonts & Colors"))
@@ -255,7 +267,7 @@ class FontsColors(PrefsItemBase):
 
 
 class Tools(PrefsItemBase):
-    help = prefshelp.preferences_tools
+    help = "prefs_tools"
     iconName = "preferences-other"
     def translateUI(self):
         self.setText(_("Tools"))
@@ -281,6 +293,24 @@ class Page(QWidget):
         """Should write settings from our widget to config."""
 
     
+class ScrolledPage(Page):
+    """Base class for settings pages that are scrollable.
+    
+    Te scrolledWidget attribute has the widget the other components
+    can be added to.
+    
+    """
+    def __init__(self, dialog):
+        super(ScrolledPage, self).__init__(dialog)
+        layout = QVBoxLayout(margin=0, spacing=0)
+        self.setLayout(layout)
+        scrollarea = QScrollArea(frameWidth=0, frameShape=QScrollArea.NoFrame)
+        layout.addWidget(scrollarea)
+        self.scrolledWidget = QWidget(scrollarea)
+        scrollarea.setWidget(self.scrolledWidget)
+        scrollarea.setWidgetResizable(True)
+
+    
 class GroupsPage(Page):
     """Base class for a Page with SettingsGroups.
     
@@ -299,6 +329,12 @@ class GroupsPage(Page):
         for group in self.groups:
             group.saveSettings()
             
+
+class ScrolledGroupsPage(GroupsPage, ScrolledPage):
+    def __init__(self, dialog):
+        ScrolledPage.__init__(self, dialog)
+        self.groups = []
+
 
 class Group(QGroupBox):
     """This is a QGroupBox that auto-adds itself to a Page."""

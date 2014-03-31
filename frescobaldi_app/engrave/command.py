@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,7 @@ Creates the commandline or Job to engrave a music document.
 
 from __future__ import unicode_literals
 
-import os
+import os, sys
 
 from PyQt4.QtCore import QSettings
 
@@ -34,28 +34,45 @@ import lilypondinfo
 
 def info(document):
     """Returns a LilyPondInfo instance that should be used by default to engrave the document."""
-    version = documentinfo.info(document).version()
+    version = documentinfo.docinfo(document).version()
     if version and QSettings().value("lilypond_settings/autoversion", False, bool):
         return lilypondinfo.suitable(version)
     return lilypondinfo.preferred()
-        
 
-def defaultJob(document, preview):
-    """Returns a default job for the document."""
-    filename, mode, includepath = documentinfo.info(document).jobinfo(True)
-    includepath.extend(documentinfo.info(document).includepath())
+
+def defaultJob(document, args=None):
+    """Return a default job for the document.
+    
+    The 'args' argument, if given, must be a list of commandline arguments
+    that are given to LilyPond, and may enable specific preview modes.
+    
+    If args is not given, the Job will cause LilyPond to run in Publish mode,
+    with point and click turned off.
+    
+    """
+    filename, includepath = documentinfo.info(document).jobinfo(True)
+    
     i = info(document)
     j = job.Job()
     
-    command = [i.abscommand()]
+    command = [i.abscommand() or i.command]
     s = QSettings()
     s.beginGroup("lilypond_settings")
     if s.value("delete_intermediate_files", True, bool):
         command.append('-ddelete-intermediate-files')
     else:
         command.append('-dno-delete-intermediate-files')
-    command.append('-dpoint-and-click' if preview else '-dno-point-and-click')
-    command.append('--pdf')
+    
+    if args:
+        command.extend(args)
+    else:
+        command.append('-dno-point-and-click')
+    
+    if s.value("default_output_target", "pdf", type("")) == "svg":
+        command.append('-dbackend=svg')
+    else:
+        command.append('--pdf')
+        
     command.extend('-I' + path for path in includepath)
     j.directory = os.path.dirname(filename)
     command.append(filename)
@@ -65,5 +82,3 @@ def defaultJob(document, preview):
     j.setTitle("{0} {1} [{2}]".format(
         os.path.basename(i.command), i.versionString(), document.documentName()))
     return j
-
-

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -58,5 +58,5 @@ def _debug(context, sourceText):
     l = len(_debugmessages)
     _debugmessages.add((context, sourceText))
     if len(_debugmessages) > l:
-        print context, sourceText
+        print('_' + repr((context, sourceText)))
 

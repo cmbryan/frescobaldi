@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,6 @@ Base types for parts.
 
 from __future__ import unicode_literals
 
-import __builtin__
 import collections
 
 from PyQt4.QtCore import *
@@ -36,10 +35,15 @@ import ly.dom
 Category = collections.namedtuple("Category", "title items icon")
 
 
+def translate(*args):
+    """Translate the arguments using the application's language."""
+    return _(*args)
+
+
 class Base(object):
     """Base class for both Part and Container."""
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=translate):
         """Should return a title.
         
         If a translator is given, it is used instead of the builtin.
@@ -47,7 +51,7 @@ class Base(object):
         """
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=translate):
         """Should return an abbreviated title.
         
         If a translator is given, it is used instead of the builtin.

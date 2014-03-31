@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -37,6 +37,7 @@ from PyQt4.QtGui import QApplication, QTextCursor
 from . import toplevel  # Find all modules and packages as toplevel
 import info             # Information about our application
 import app              # Construct QApplication
+import install          # Update QSettings structure etc. if needed
 import guistyle         # Setup GUI style
 import po.setup         # Setup language
 import remote           # IPC with other Frescobaldi instances
@@ -62,7 +63,7 @@ def parse_commandline():
     parser.add_option('-c', '--column', type="int", metavar=_("NUM"),
         help=_("Column to go to, starting at 0"), default=0)
     parser.add_option('--start', metavar=_("NAME"),
-        help=_("Session to start ('{none}' for empty session)").format(none="none"),
+        help=_("Session to start ('{none}' for empty session)").format(none="-"),
         dest="session")
     parser.add_option('--list-sessions', action="store_true", default=False,
         help=_("List the session names and exit"))
@@ -134,34 +135,48 @@ def main():
     import mainwindow       # contains MainWindow class
     import session          # Initialize QSessionManager support
     import sessions         # Initialize our own named session support
-    import document         # contains Document class
 
     # boot Frescobaldi-specific stuff that should be running on startup
     import viewhighlighter  # highlight arbitrary ranges in text
     import progress         # creates progress bar in view space
+    import musicpos         # shows music time in statusbar
     import autocomplete     # auto-complete input
+    import wordboundary     # better wordboundary behaviour for the editor
+    
+    if sys.platform.startswith('darwin'):
+        import macosx.setup
     
     if app.qApp.isSessionRestored():
         # Restore session, we are started by the session manager
         session.restoreSession()
         return
 
-    # load specified session
+    # load specified session?
     doc = None
-    if options.session and options.session != "none":
+    if options.session and options.session != "-":
         doc = sessions.loadSession(options.session)
-        
+    
     # Just create one MainWindow
     win = mainwindow.MainWindow()
     win.show()
     
-    if urls:
-        for u in urls:
-            doc = win.openUrl(u, options.encoding)
-    elif not options.session:
-        # no docs, load default session
-        doc = sessions.loadDefaultSession()
-    win.setCurrentDocument(doc or document.Document())
+    # load documents given as arguments
+    for u in urls:
+        doc = win.openUrl(u, options.encoding)
+    
+    # were documents loaded?
+    if not doc:
+        if app.documents:
+            doc = app.documents[-1]
+        elif not options.session:
+            # no docs, load default session
+            doc = sessions.loadDefaultSession()
+    
+    if doc:
+        win.setCurrentDocument(doc)
+    else:
+        win.cleanStart()
+    
     if urls and options.line is not None:
         # set the last loaded document active and apply navigation if requested
         pos = doc.findBlockByNumber(options.line - 1).position() + options.column
@@ -173,5 +188,4 @@ def main():
 
 main()
 
-sys.excepthook = app.excepthook
 sys.displayhook = app.displayhook

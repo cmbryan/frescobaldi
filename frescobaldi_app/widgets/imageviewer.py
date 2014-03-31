@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -25,8 +25,8 @@ from __future__ import unicode_literals
 
 from PyQt4.QtCore import pyqtSignal, QMimeData, QSize, QRect, Qt
 from PyQt4.QtGui import (
-    QApplication, QDrag, QImage, QPainter, QPalette, QPixmap, QScrollArea,
-    QSizePolicy, QWidget)
+    QApplication, QColor, QDrag, QImage, QPainter, QPalette, QPixmap,
+    QScrollArea, QSizePolicy, QWidget)
 
 
 __all__ = ['ImageViewer']
@@ -88,6 +88,11 @@ class ImageViewer(QScrollArea):
         drag.setMimeData(data)
         if max(image.width(), image.height()) > 256:
             image = image.scaled(QSize(256, 256), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        p = QPainter()
+        p.begin(image)
+        p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+        p.fillRect(image.rect(), QColor(0, 0, 0, 160))
+        p.end()
         pixmap = QPixmap.fromImage(image)
         drag.setPixmap(pixmap)
         drag.setHotSpot(pixmap.rect().center())

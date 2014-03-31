@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -25,6 +25,7 @@ from __future__ import unicode_literals
 
 import itertools
 import os
+import sys
 import weakref
 
 from PyQt4.QtCore import *
@@ -52,9 +53,17 @@ import panelmanager
 import engrave
 import scorewiz
 import externalchanges
+import browseriface
+import vcs
 
 
 class MainWindow(QMainWindow):
+    
+    # emitted when the MainWindow will close
+    aboutToClose = pyqtSignal()
+    
+    # only emitted when this is the last MainWindow to close
+    aboutToCloseLast = pyqtSignal()
     
     # both signals emit (current, previous)
     currentDocumentChanged = pyqtSignal(document.Document, document.Document)
@@ -126,6 +135,7 @@ class MainWindow(QMainWindow):
         
         if other:
             self.setCurrentDocument(other.currentDocument())
+        self.updateWindowTitle()
         app.mainwindowCreated(self)
         
     def documents(self):
@@ -203,6 +213,7 @@ class MainWindow(QMainWindow):
             self.updateDocActions()
             self.updateWindowTitle()
         self.updateSelection()
+        self.updateActions()
         self.currentViewChanged.emit(view, curv)
         if curd is not doc:
             self.currentDocumentChanged.emit(doc, curd)
@@ -218,6 +229,11 @@ class MainWindow(QMainWindow):
             ac.edit_cut.setEnabled(selection)
             ac.edit_select_none.setEnabled(selection)
     
+    def updateActions(self):
+        view = self.currentView()
+        action = self.actionCollection.view_wrap_lines
+        action.setChecked(view.lineWrapMode() == QPlainTextEdit.WidgetWidth)
+        
     def updateDocActions(self):
         doc = self.currentDocument()
         ac = self.actionCollection
@@ -239,7 +255,13 @@ class MainWindow(QMainWindow):
             if doc.isModified():
                 # L10N: state of document in window titlebar
                 name.append(_("[modified]"))
-        self.setWindowTitle(app.caption(" ".join(name)))
+        
+        window_title = app.caption(" ".join(name))
+        
+        if vcs.app_is_git_controlled():
+            window_title += " " + vcs.app_active_branch_window_title()
+        
+        self.setWindowTitle(window_title)
     
     def dropEvent(self, ev):
         if not ev.source() and ev.mimeData().hasUrls():
@@ -254,9 +276,11 @@ class MainWindow(QMainWindow):
         
     def closeEvent(self, ev):
         lastWindow = len(app.windows) == 1
-        if lastWindow:
-            self.writeSettings()
         if not lastWindow or self.queryClose():
+            self.aboutToClose.emit()
+            if lastWindow:
+                self.writeSettings()
+                self.aboutToCloseLast.emit()
             app.windows.remove(self)
             app.mainwindowClosed(self)
             ev.accept()
@@ -370,14 +394,37 @@ class MainWindow(QMainWindow):
         return (resultfiles.results(self.currentDocument()).currentDirectory()
                 or app.basedir() or QDir.homePath() or os.getcwdu())
     
+    def cleanStart(self):
+        """Called when the previous action left no document open.
+        
+        Currently simply calls newDocument().
+        
+        """
+        self.newDocument()
+    
     ##
     # Implementations of menu actions
     ##
     
     def newDocument(self):
         """ Creates a new, empty document. """
-        self.setCurrentDocument(document.Document())
-        
+        d = document.Document()
+        self.setCurrentDocument(d)
+        s = QSettings()
+        ndoc = s.value("new_document", "empty", type(""))
+        template = s.value("new_document_template", "", type(""))
+        if ndoc == "template" and template:
+            from snippet import snippets, insert
+            if snippets.text(template):
+                insert.insert(template, self.currentView())
+                d.setUndoRedoEnabled(False)
+                d.setUndoRedoEnabled(True) # d.clearUndoRedoStacks() only in Qt >= 4.7
+                d.setModified(False)
+        elif ndoc == "version":
+            import lilypondinfo
+            d.setPlainText('\\version "{0}"\n\n'.format(lilypondinfo.preferred().versionString()))
+            d.setModified(False)
+    
     def openDocument(self):
         """ Displays an open dialog to open one or more documents. """
         ext = os.path.splitext(self.currentDocument().url().path())[1]
@@ -404,6 +451,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, app.caption(_("Error")),
                 _("Can't write to destination:\n\n{url}").format(url=dest))
             return False
+        if QSettings().value("strip_trailing_whitespace", False, bool):
+            import reformat
+            reformat.remove_trailing_whitespace(QTextCursor(doc))
         b = backup.backup(filename)
         success = doc.save()
         if not success:
@@ -451,7 +501,7 @@ class MainWindow(QMainWindow):
             doc.close()
             # keep one document
             if not app.documents:
-                self.setCurrentDocument(document.Document())
+                self.cleanStart()
         return close
         
     def saveCurrentDocument(self):
@@ -556,7 +606,7 @@ class MainWindow(QMainWindow):
         sessions.manager.get(self).saveCurrentSessionIfDesired()
         if self.queryClose():
             sessions.setCurrentSession(None)
-            self.setCurrentDocument(document.Document())
+            self.cleanStart()
     
     def quit(self):
         """Closes all MainWindows."""
@@ -564,6 +614,12 @@ class MainWindow(QMainWindow):
             if window is not self:
                 window.close()
         self.close()
+        app.qApp.quit()
+    
+    def restart(self):
+        """Closes all MainWindows and restart Frescobaldi."""
+        self.quit()
+        app.restart()
     
     def insertFromFile(self):
         ext = os.path.splitext(self.currentDocument().url().path())[1]
@@ -589,7 +645,7 @@ class MainWindow(QMainWindow):
         helpers.openUrl(QUrl.fromLocalFile(self.currentDirectory()), "shell")
     
     def printSource(self):
-        cursor = self.currentView().textCursor()
+        cursor = self.textCursor()
         printer = QPrinter()
         dlg = QPrintDialog(printer, self)
         dlg.setWindowTitle(app.caption(_("dialog title", "Print Source")))
@@ -598,21 +654,14 @@ class MainWindow(QMainWindow):
             options |= QAbstractPrintDialog.PrintSelection
         dlg.setOptions(options)
         if dlg.exec_():
-            doc = highlighter.htmlCopy(self.currentDocument(), 'printer')
+            if dlg.printRange() != QAbstractPrintDialog.Selection:
+                cursor.clearSelection()
+            number_lines = QSettings().value("source_export/number_lines", False, bool)
+            doc = highlighter.html_copy(cursor, 'printer', number_lines)
             doc.setMetaInformation(QTextDocument.DocumentTitle, self.currentDocument().url().toString())
             font = doc.defaultFont()
             font.setPointSizeF(font.pointSizeF() * 0.8)
             doc.setDefaultFont(font)
-            if dlg.testOption(QAbstractPrintDialog.PrintSelection):
-                # cut out not selected text
-                start, end = cursor.selectionStart(), cursor.selectionEnd()
-                cur1 = QTextCursor(doc)
-                cur1.setPosition(start, QTextCursor.KeepAnchor)
-                cur2 = QTextCursor(doc)
-                cur2.setPosition(end)
-                cur2.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
-                cur2.removeSelectedText()
-                cur1.removeSelectedText()
             doc.print_(printer)
     
     def exportColoredHtml(self):
@@ -629,8 +678,10 @@ class MainWindow(QMainWindow):
             name, "{0} (*.html)".format("HTML Files"))
         if not filename:
             return #cancelled
+        number_lines = QSettings().value("source_export/number_lines", False, bool)
+        inline_style = QSettings().value("source_export/inline_export", False, bool)
         import highlight2html
-        html = highlight2html.HtmlHighlighter().html_document(doc)
+        html = highlight2html.html_document(doc, inline=inline_style, number_lines=number_lines)
         try:
             with open(filename, "wb") as f:
                 f.write(html.encode('utf-8'))
@@ -639,10 +690,10 @@ class MainWindow(QMainWindow):
                 _("Can't write to destination:\n\n{url}\n\n{error}").format(url=filename, error=err))
         
     def undo(self):
-        self.currentDocument().undo()
+        self.currentView().undo()
         
     def redo(self):
-        self.currentDocument().redo()
+        self.currentView().redo()
     
     def cut(self):
         self.currentView().cut()
@@ -654,15 +705,18 @@ class MainWindow(QMainWindow):
         self.currentView().paste()
         
     def copyColoredHtml(self):
-        cursor = self.currentView().textCursor()
+        cursor = self.textCursor()
         if not cursor.hasSelection():
             return
+        number_lines = QSettings().value("source_export/number_lines", False, bool)
+        inline_style = QSettings().value("source_export/inline_copy", True, bool)
+        as_plain_text = QSettings().value("source_export/copy_html_as_plain_text", False, bool)
+        document_body_only = QSettings().value("source_export/copy_document_body_only", False, bool)
         import highlight2html
-        h = highlight2html.HtmlHighlighter(inline_style=True)
-        html = h.html_selection(cursor)
+        html = highlight2html.html_inline(cursor, inline=inline_style, number_lines=number_lines,
+            full_html=not document_body_only)
         data = QMimeData()
-        data.setHtml(html)
-        #data.setText(html)
+        data.setText(html) if as_plain_text else data.setHtml(html)
         QApplication.clipboard().setMimeData(data)
         
     def selectNone(self):
@@ -672,6 +726,13 @@ class MainWindow(QMainWindow):
     
     def selectAll(self):
         self.currentView().selectAll()
+        
+    def selectBlock(self):
+        import lydocument
+        import ly.cursortools
+        cursor = lydocument.cursor(self.textCursor())
+        if ly.cursortools.select_block(cursor):
+            self.currentView().setTextCursor(cursor.cursor())
         
     def find(self):
         import search
@@ -701,6 +762,11 @@ class MainWindow(QMainWindow):
         self.writeSettings()
         MainWindow(self).show()
 
+    def toggleWrapLines(self, enable):
+        """Called when the user toggles View->Line Wrap"""
+        wrap = QPlainTextEdit.WidgetWidth if enable else QPlainTextEdit.NoWrap
+        self.currentView().setLineWrapMode(wrap)
+    
     def scrollUp(self):
         """Scroll up without moving the cursor"""
         sb = self.currentView().verticalScrollBar()
@@ -733,8 +799,8 @@ class MainWindow(QMainWindow):
     
     def showManual(self):
         """Shows the user guide, called when user presses F1."""
-        import help
-        help.help("contents")
+        import userguide
+        userguide.show()
     
     def showAbout(self):
         """Shows about dialog."""
@@ -759,6 +825,7 @@ class MainWindow(QMainWindow):
         
         # connections
         ac.file_quit.triggered.connect(self.quit, Qt.QueuedConnection)
+        ac.file_restart.triggered.connect(self.restart, Qt.QueuedConnection)
         ac.file_new.triggered.connect(self.newDocument)
         ac.file_open.triggered.connect(self.openDocument)
         ac.file_insert_file.triggered.connect(self.insertFromFile)
@@ -784,6 +851,7 @@ class MainWindow(QMainWindow):
         ac.edit_copy_colored_html.triggered.connect(self.copyColoredHtml)
         ac.edit_select_all.triggered.connect(self.selectAll)
         ac.edit_select_none.triggered.connect(self.selectNone)
+        ac.edit_select_current_toplevel.triggered.connect(self.selectBlock)
         ac.edit_select_full_lines_up.triggered.connect(self.selectFullLinesUp)
         ac.edit_select_full_lines_down.triggered.connect(self.selectFullLinesDown)
         ac.edit_find.triggered.connect(self.find)
@@ -791,6 +859,7 @@ class MainWindow(QMainWindow):
         ac.edit_preferences.triggered.connect(self.showPreferences)
         ac.view_next_document.triggered.connect(self.tabBar.nextDocument)
         ac.view_previous_document.triggered.connect(self.tabBar.previousDocument)
+        ac.view_wrap_lines.triggered.connect(self.toggleWrapLines)
         ac.view_scroll_up.triggered.connect(self.scrollUp)
         ac.view_scroll_down.triggered.connect(self.scrollDown)
         ac.window_new.triggered.connect(self.newWindow)
@@ -828,11 +897,12 @@ class MainWindow(QMainWindow):
         t.setObjectName('toolbar_main')
         t.addAction(ac.file_new)
         t.addAction(ac.file_open)
-        t.addSeparator()
         t.addAction(ac.file_save)
         t.addAction(ac.file_save_as)
-        t.addSeparator()
         t.addAction(ac.file_close)
+        t.addSeparator()
+        t.addAction(browseriface.get(self).actionCollection.go_back)
+        t.addAction(browseriface.get(self).actionCollection.go_forward)
         t.addSeparator()
         t.addAction(ac.edit_undo)
         t.addAction(ac.edit_redo)
@@ -880,6 +950,7 @@ class ActionCollection(actioncollection.ActionCollection):
         self.file_close_other = QAction(parent)
         self.file_close_all = QAction(parent)
         self.file_quit = QAction(parent)
+        self.file_restart = QAction(parent)
         
         self.export_colored_html = QAction(parent)
         
@@ -902,6 +973,7 @@ class ActionCollection(actioncollection.ActionCollection):
         
         self.view_next_document = QAction(parent)
         self.view_previous_document = QAction(parent)
+        self.view_wrap_lines = QAction(parent, checkable=True)
         self.view_scroll_up = QAction(parent)
         self.view_scroll_down = QAction(parent)
         
@@ -987,6 +1059,18 @@ class ActionCollection(actioncollection.ActionCollection):
         
         self.help_manual.setShortcuts(QKeySequence.HelpContents)
         
+        # Mac OS X-specific roles?
+        if sys.platform.startswith('darwin'):
+            import macosx
+            if macosx.use_osx_menu_roles():
+                self.file_quit.setMenuRole(QAction.QuitRole)
+                self.edit_preferences.setMenuRole(QAction.PreferencesRole)
+                self.help_about.setMenuRole(QAction.AboutRole)
+            else:
+                self.file_quit.setMenuRole(QAction.NoRole)
+                self.edit_preferences.setMenuRole(QAction.NoRole)
+                self.help_about.setMenuRole(QAction.NoRole)
+        
     def translateUI(self):
         self.file_new.setText(_("action: new document", "&New"))
         self.file_open.setText(_("&Open..."))
@@ -1010,6 +1094,7 @@ class ActionCollection(actioncollection.ActionCollection):
         self.file_close_all.setText(_("Close All Documents"))
         self.file_close_all.setToolTip(_("Closes all documents and leaves the current session."))
         self.file_quit.setText(_("&Quit"))
+        self.file_restart.setText(_("Restart {appname}").format(appname=info.appname))
         
         self.export_colored_html.setText(_("Export Source as Colored &HTML..."))
         
@@ -1032,6 +1117,7 @@ class ActionCollection(actioncollection.ActionCollection):
         
         self.view_next_document.setText(_("&Next Document"))
         self.view_previous_document.setText(_("&Previous Document"))
+        self.view_wrap_lines.setText(_("Wrap &Lines"))
         self.view_scroll_up.setText(_("Scroll Up"))
         self.view_scroll_down.setText(_("Scroll Down"))
         

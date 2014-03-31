@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -47,17 +47,22 @@ class PanelManager(plugin.MainWindowPlugin):
         # add the the panel stubs here
         self.loadPanel("quickinsert.QuickInsertPanel")
         self.loadPanel("musicview.MusicViewPanel")
+        self.loadPanel("svgview.SvgViewPanel")
         self.loadPanel("logtool.LogTool")
         self.loadPanel("docbrowser.HelpBrowser")
         self.loadPanel("snippet.tool.SnippetTool")
         self.loadPanel("miditool.MidiTool")
+        self.loadPanel("midiinput.tool.MidiInputTool")
         self.loadPanel("charmap.CharMap")
         self.loadPanel("doclist.DocumentList")
         self.loadPanel("outline.OutlinePanel")
+        self.loadPanel("layoutcontrol.LayoutControlOptions")
         
         self.createActions()
+        
         # make some default arrangements
         mainwindow.tabifyDockWidget(self.musicview, self.docbrowser)
+        mainwindow.tabifyDockWidget(self.musicview, self.svgview)
     
     def loadPanel(self, name):
         """Loads the named Panel.
@@ -87,6 +92,21 @@ class PanelManager(plugin.MainWindowPlugin):
         """Adds all toggleViewActions to the given menu."""
         for name, panel in self._panels:
             menu.addAction(panel.toggleViewAction())
+
+    def panels_at(self, area):
+        """Return the list of panels at the specified Qt.DockWidgetArea.
+        
+        Each entry is the (name, panel) tuple. Floating or hidden panels are
+        not returned, but tabbed panels are.
+        
+        """
+        result = []
+        for name, panel in self._panels:
+            if (self.mainwindow().dockWidgetArea(panel) == area
+                and not panel.isFloating()
+                and (panel.isVisible() or self.mainwindow().tabifiedDockWidgets(panel))):
+                result.append((name, panel))
+        return result
 
 
 class Actions(actioncollection.ActionCollection):

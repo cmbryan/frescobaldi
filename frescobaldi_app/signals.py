@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -63,7 +63,7 @@ class Signal(object):
             self.somethingChanged("Hi there!")     # emit the signal
     
     def receiver(arg):
-        print "Received message:", arg
+        print("Received message:", arg)
     
     
     >>> o = MyObject()
@@ -249,7 +249,7 @@ class SignalContext(Signal):
                 except:
                     exc = sys.exc_info()
             if exc != (None, None, None):
-                raise exc[0], exc[1], exc[2]
+                raise # exc[0], exc[1], exc[2]
 
 
 class ListenerBase(object):

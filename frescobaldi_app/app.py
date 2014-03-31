@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -35,7 +35,7 @@ qApp = QApplication([os.path.abspath(sys.argv[0])] + sys.argv[1:])
 QApplication.setApplicationName(info.name)
 QApplication.setApplicationVersion(info.version)
 QApplication.setOrganizationName(info.name)
-QApplication.setOrganizationDomain(info.url)
+QApplication.setOrganizationDomain(info.domain)
 
 windows = []
 documents = []
@@ -103,6 +103,15 @@ def run():
     result = qApp.exec_()
     aboutToQuit()
     return result
+
+def restart():
+    """Restarts Frescobaldi."""
+    args = [os.path.abspath(sys.argv[0])] + sys.argv[1:]
+    python_executable = sys.executable
+    if python_executable:
+        args = [python_executable] + args
+    import subprocess
+    subprocess.Popen(args)
     
 def translateUI(obj, priority=0):
     """Translates texts in the object.
@@ -159,7 +168,8 @@ def basedir():
 
 def settings(name):
     """Returns a QSettings object referring a file in ~/.config/frescobaldi/"""
-    s = QSettings(info.name, name)
+    s = QSettings()
+    s.beginGroup(name)
     s.setFallbacksEnabled(False)
     return s
 
@@ -176,5 +186,5 @@ def excepthook(exctype, excvalue, exctb):
 def displayhook(obj):
     """Prevent normal displayhook from overwriting __builtin__._"""
     if obj is not None:
-        print repr(obj)
+        print(repr(obj))
 

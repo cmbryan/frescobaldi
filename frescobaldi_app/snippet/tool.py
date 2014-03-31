@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -131,6 +131,7 @@ class SnippetActions(actioncollection.ShortcutCollection):
         self.setDefaultShortcuts('uppercase', [QKeySequence('Ctrl+U')])
         self.setDefaultShortcuts('lowercase', [QKeySequence('Ctrl+Shift+U')])
         self.setDefaultShortcuts('last_note', [QKeySequence('Ctrl+;')])
+        self.setDefaultShortcuts('double', [QKeySequence('Ctrl+D')])
         
     def realAction(self, name):
         from . import actions, model

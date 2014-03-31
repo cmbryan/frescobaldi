@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,8 +23,6 @@ Some special part types.
 
 from __future__ import unicode_literals
 
-import __builtin__
-
 from PyQt4.QtGui import QCheckBox
 
 import ly.dom
@@ -35,13 +33,13 @@ from . import register
 
 class Chords(_base.ChordNames, _base.Part):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Chord names")
     
 
 class BassFigures(_base.Part):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Figured Bass")
 
     def createWidgets(self, layout):
@@ -66,7 +64,7 @@ class BassFigures(_base.Part):
 
 class Staff(_base.Part):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Staff")
 
 

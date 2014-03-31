@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -31,6 +31,7 @@ import icons
 import preferences
 import textformats
 import qutil
+import ly.colorize
 
 from widgets import ClearButton
 from widgets.schemeselector import SchemeSelector
@@ -86,15 +87,16 @@ class FontsColors(preferences.Page):
         self.defaultStylesItem.setExpanded(True)
         
         self.allStyles = {}
-        for group, styles in textformats.allStyles:
+        for group, styles in ly.colorize.default_mapping():
             i = QTreeWidgetItem()
             children = {}
             self.allStyles[group] = (i, children)
             self.tree.addTopLevelItem(i)
             i.group = group
-            for name in styles:
+            for name, base, clss in styles:
                 j = QTreeWidgetItem()
                 j.name = name
+                j.base = base
                 i.addChild(j)
                 children[name] = j
         
@@ -128,9 +130,9 @@ class FontsColors(preferences.Page):
         
         for name in textformats.defaultStyles:
             self.defaultStyles[name].setText(0, self.defaultStyleNames[name])
-        for group, styles in textformats.allStyles:
+        for group, styles in ly.colorize.default_mapping():
             self.allStyles[group][0].setText(0, self.allStyleNames[group][0])
-            for name in styles:
+            for name, base, clss in styles:
                 self.allStyles[group][1][name].setText(0, self.allStyleNames[group][1][name])
             
     def currentItemChanged(self, item, previous):
@@ -152,7 +154,7 @@ class FontsColors(preferences.Page):
                 # specific style of specific group
                 group, name = item.parent().group, item.name
                 w.setTitle("{0}: {1}".format(item.parent().text(0), item.text(0)))
-                inherit = textformats.inherits[group].get(name)
+                inherit = item.base
                 if inherit:
                     toptext = _("(Inherits: {name})").format(name=self.defaultStyleNames[inherit])
                 w.setTristate(bool(inherit))
@@ -182,6 +184,12 @@ class FontsColors(preferences.Page):
         else:
             self._printScheme = None
         self.changed.emit()
+    
+    def addSchemeData(self, scheme, tfd):
+        self.data[scheme] = tfd
+        
+    def currentSchemeData(self):
+        return self.data[self.scheme.currentScheme()]
         
     def updateDisplay(self):
         data = self.data[self.scheme.currentScheme()]
@@ -223,10 +231,9 @@ class FontsColors(preferences.Page):
             setItemTextFormat(self.defaultStyles[name], data.defaultStyles[name])
         
         # update looks of all the specific styles
-        for group, styles in textformats.allStyles:
+        for group, styles in ly.colorize.default_mapping():
             children = self.allStyles[group][1]
-            for name in styles:
-                inherit = textformats.inherits[group].get(name)
+            for name, inherit, clss in styles:
                 f = QTextCharFormat(data.defaultStyles[inherit]) if inherit else QTextCharFormat()
                 f.merge(data.allStyles[group][name])
                 setItemTextFormat(children[name], f)
@@ -253,6 +260,19 @@ class FontsColors(preferences.Page):
         self.updateDisplay()
         self.changed.emit()
         
+    def import_(self, filename):
+        from . import import_export
+        import_export.importTheme(filename, self, self.scheme)
+        
+    def export(self, name, filename):
+        from . import import_export
+        try:
+            import_export.exportTheme(self, name, filename)
+        except (IOError, OSError) as e:
+            QMessageBox.critical(self, _("Error"), _(
+                "Can't write to destination:\n\n{url}\n\n{error}").format(
+                url=filename, error=e.strerror))
+    
     def loadSettings(self):
         self.data = {} # holds all data with scheme as key
         self._printScheme = QSettings().value("printer_scheme", "default", type(""))
@@ -483,6 +503,7 @@ def allStyleNames():
             'pitch':        _("Pitch"),
             'octave':       _("Octave"),
             'duration':     _("Duration"),
+            'accidental':   _("Accidental"),
             'octavecheck':  _("Octave Check"),
             'fingering':    _("Fingering"),
                               # L10N: For String instruments like Guitar
@@ -502,6 +523,9 @@ def allStyleNames():
             'lyricmode':    _("Lyric Mode"),
             'lyrictext':    _("Lyric Text"),
             'delimiter':    _("Delimiter"),
+            'figbass':      _("Figured Bass"),
+            'figbstep':     _("Figured Bass Step"),
+            'figbmodif':    _("Figured Bass Modifier"),
             'context':      _("Context"),
             'grob':         _("Layout Object"),
             'property':     _("Property"),

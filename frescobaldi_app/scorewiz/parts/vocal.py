@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,6 @@ Vocal part types.
 
 from __future__ import unicode_literals
 
-import __builtin__
 import collections
 import itertools
 import re
@@ -122,31 +121,31 @@ class VocalSoloPart(VocalPart, _base.SingleVoicePart):
 
 class SopranoVoice(VocalSoloPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Soprano")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Soprano", "S.")
 
 
 class MezzoSopranoVoice(VocalSoloPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Mezzo-soprano")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Mezzo-soprano", "Ms.")
 
 
 class AltoVoice(VocalSoloPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Alto")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Alto", "A.")
     
     octave = 0
@@ -154,11 +153,11 @@ class AltoVoice(VocalSoloPart):
 
 class TenorVoice(VocalSoloPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Tenor")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Tenor", "T.")
 
     octave = 0
@@ -167,11 +166,11 @@ class TenorVoice(VocalSoloPart):
 
 class BassVoice(VocalSoloPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Bass")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Bass", "B.")
 
     octave = -1
@@ -180,7 +179,7 @@ class BassVoice(VocalSoloPart):
 
 class LeadSheet(VocalPart, _base.ChordNames):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Lead sheet")
     
     def createWidgets(self, layout):
@@ -269,7 +268,7 @@ class LeadSheet(VocalPart, _base.ChordNames):
 
 class Choir(VocalPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Choir")
 
     def createWidgets(self, layout):
@@ -615,7 +614,8 @@ class Choir(VocalPart):
                 # Append voice to the rehearsalMidi function
                 name = voice2id[voice] + str(num or '')
                 seq = ly.dom.Seq(ly.dom.Voice(name, parent=ly.dom.Staff(name, parent=choir)))
-                ly.dom.Text('s1*0\\f', seq) # add one dynamic
+                if builder.lyVersion < (2, 18, 0):
+                    ly.dom.Text('<>\\f', seq) # add one dynamic
                 ly.dom.Identifier(ref, seq) # add the reference to the voice
                 
                 book = ly.dom.Book()

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -81,27 +81,31 @@ class Shortcuts(preferences.Page):
         # keep a list of actions not in the menu structure
         left = allactions.keys()
         
-        def childactions(menu):
-            for a in menu.actions():
+        def add_actions(menuitem, actions):
+            """Add actions to a QTreeWidgetItem."""
+            for a in actions:
                 if a.menu():
-                    for a in childactions(a.menu()):
-                        yield a
+                    item = build_menu_item(a)
+                    if item.childCount():
+                        menuitem.addChild(item)
                 elif a in left:
-                    yield a
                     left.remove(a)
-                
+                    menuitem.addChild(ShortcutItem(a, *allactions[a]))
+            menuitem.setFlags(Qt.ItemIsEnabled) # disable selection
+            
+        def build_menu_item(action):
+            """Return a QTreeWidgetItem with children for all the actions in the submenu."""
+            menuitem = QTreeWidgetItem()
+            text = qutil.removeAccelerator(action.text())
+            menuitem.setText(0, _("Menu {name}").format(name=text))
+            add_actions(menuitem, action.menu().actions())
+            return menuitem
+        
         # present the actions nicely ordered as in the menus
         for a in win.menuBar().actions():
-            menuitem = QTreeWidgetItem()
-            menu = a.menu()
-            text = qutil.removeAccelelator(a.text())
-            for a in childactions(menu):
-                menuitem.addChild(ShortcutItem(a, *allactions[a]))
+            menuitem = build_menu_item(a)
             if menuitem.childCount():
-                menuitem.setText(0, _("Menu {name}:").format(name=text))
                 self.tree.addTopLevelItem(menuitem)
-                menuitem.setExpanded(True)
-                menuitem.setFlags(Qt.ItemIsEnabled) # disable selection
         
         # sort leftover actions
         left.sort(key=lambda i: i.text())
@@ -118,7 +122,6 @@ class Shortcuts(preferences.Page):
             for a in titlegroups[title]:
                 item.addChild(ShortcutItem(a, *allactions[a]))
             self.tree.addTopLevelItem(item)
-            item.setExpanded(True)
             item.setFlags(Qt.ItemIsEnabled) # disable selection
             
         # show other actions that were not in the menus
@@ -128,8 +131,9 @@ class Shortcuts(preferences.Page):
                 item.addChild(ShortcutItem(a, *allactions[a]))
         if item.childCount():
             self.tree.addTopLevelItem(item)
-            item.setExpanded(True)
             item.setFlags(Qt.ItemIsEnabled) # disable selection
+        
+        self.tree.expandAll()
         
         item = self.tree.topLevelItem(0).child(0)
         if _lastaction:
@@ -142,11 +146,23 @@ class Shortcuts(preferences.Page):
         self.tree.resizeColumnToContents(0)
         
     def items(self):
-        for i in range(self.tree.topLevelItemCount()):
-            top = self.tree.topLevelItem(i)
-            for j in range(top.childCount()):
-                yield top.child(j)
+        """Yield all the items in the actions tree."""
+        def children(item):
+            for i in range(item.childCount()):
+                c = item.child(i)
+                if c.childCount():
+                    for c1 in children(c):
+                        yield c1
+                else:
+                    yield c
+        for c in children(self.tree.invisibleRootItem()):
+            yield c
     
+    def item(self, collection, name):
+        for item in self.items():
+            if item.collection.name == collection and item.name == name:
+                return item
+             
     def saveSettings(self):
         self.scheme.saveSettings("shortcut_scheme", "shortcut_schemes", "shortcuts")
         for item in self.items():
@@ -178,17 +194,43 @@ class Shortcuts(preferences.Page):
             self.edit.setText(_("(no shortcut)"))
             self.edit.setEnabled(False)
         
+    def import_(self, filename):
+        from . import import_export
+        import_export.importShortcut(filename, self, self.scheme)
+        
+    def export(self, name, filename):
+        from . import import_export
+        try:
+            import_export.exportShortcut(self, self.scheme.currentScheme(), name, filename)
+        except (IOError, OSError) as e:
+            QMessageBox.critical(self, _("Error"), _(
+                "Can't write to destination:\n\n{url}\n\n{error}").format(
+                url=filename, error=e.strerror))
+    
+    def findShortcutConflict(self, shortcut):
+        """Find the possible shortcut conflict and return the conflict name."""
+        if shortcut:
+            item = self.tree.currentItem()
+            if not isinstance(item, ShortcutItem):
+                return None
+            scheme = self.scheme.currentScheme()
+            for i in self.items():
+                a = i.action(scheme)
+                if i != item and a.shortcuts():
+                    for s1 in a.shortcuts():
+                        if s1.matches(shortcut) or shortcut.matches(s1):
+                            return qutil.removeAccelerator(a.text())
+        return None           
+    
     def editCurrentItem(self):
         item = self.tree.currentItem()
         if not isinstance(item, ShortcutItem):
             return
-        try:
-            dlg = self._editdialog
-        except AttributeError:
-            dlg = self._editdialog = ShortcutEditDialog(self)
+
+        dlg = ShortcutEditDialog(self, self.findShortcutConflict)
         scheme = self.scheme.currentScheme()
         action = item.action(scheme)
-        default = item.defaultShortcuts()
+        default = item.defaultShortcuts() or None
         if dlg.editAction(action, default):
             shortcuts = action.shortcuts()
             # check for conflicts
@@ -199,33 +241,14 @@ class Shortcuts(preferences.Page):
                         if s1.matches(s2) or s2.matches(s1):
                             conflicting.append(i)
             if conflicting:
-                # show a question dialog
-                msg = [_("This shortcut conflicts with the following command:",
-                        "This shortcut conflicts with the following commands:", len(conflicting))]
-                msg.append('<br/>'.join(i.text(0) for i in conflicting))
-                msg.append(_("Remove the shortcut from that command?",
-                             "Remove the shortcut from those commands?", len(conflicting)))
-                msg = '<p>{0}</p>'.format('</p><p>'.join(msg))
-                res = QMessageBox.warning(self, _("Shortcut Conflict"), msg,
-                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-                if res == QMessageBox.Yes:
-                    # remove from conflicting
-                    for i in conflicting:
-                        l = i.shortcuts(scheme)
-                        for s1 in list(l): # copy
-                            for s2 in shortcuts:
-                                if s1.matches(s2) or s2.matches(s1):
-                                    l.remove(s1)
-                        i.setShortcuts(l, scheme)
-                elif res == QMessageBox.No:
-                    # remove from ourselves
-                    for i in conflicting:
-                        for s1 in list(shortcuts): # copy
-                            for s2 in i.shortcuts(scheme):
-                                if s1.matches(s2) or s2.matches(s1):
-                                    shortcuts.remove(s1)
-                else:
-                    return # cancelled
+                for i in conflicting:
+                    l = i.shortcuts(scheme)
+                    for s1 in list(l): # copy
+                        for s2 in shortcuts:
+                            if s1.matches(s2) or s2.matches(s1):
+                                l.remove(s1)
+                    i.setShortcuts(l, scheme)
+                
             # store the shortcut
             item.setShortcuts(shortcuts, scheme)
             self.changed.emit()
@@ -237,7 +260,7 @@ class ShortcutItem(QTreeWidgetItem):
         self.collection = collection
         self.name = name
         self.setIcon(0, action.icon())
-        self.setText(0, qutil.removeAccelelator(action.text()))
+        self.setText(0, qutil.removeAccelerator(action.text()))
         self._shortcuts = {}
         
     def clearSettings(self):
@@ -256,7 +279,10 @@ class ShortcutItem(QTreeWidgetItem):
     def shortcuts(self, scheme):
         """Returns the list of shortcuts currently set for scheme."""
         return list(self._shortcuts[scheme][0])
-        
+    
+    def isDefault(self, scheme):
+        return self._shortcuts[scheme][1]
+    
     def setShortcuts(self, shortcuts, scheme):
         default = shortcuts == self.defaultShortcuts()
         self._shortcuts[scheme] = (shortcuts, default)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -34,52 +34,7 @@ import info
 import icons
 import helpers
 import bugreport
-import language_names
-
-
-def credits():
-    """Iterating over this should return paragraphs for the credits page."""
-    yield _(
-        "{appname} is written in {python} and uses the {qt} toolkit.").format(
-        appname=info.appname,
-        # L10N: the Python programming language
-        python='<a href="http://www.python.org/">{0}</a>'.format(_("Python")),
-        # L10N: the Qt4 application framework
-        qt='<a href="http://qt.nokia.com/">{0}</a>'.format(_("Qt4")))
-    yield _(
-        "The Music View is powered by the {poppler} library by "
-        "{authors} and others.").format(
-        poppler='<a href="http://poppler.freedesktop.org/">{0}</a>'.format(
-            # L10N: the Poppler PDF library
-            _("Poppler")),
-        authors='Kristian Høgsberg, Albert Astals Cid')
-    yield _(
-        "Most of the bundled icons are created by {tango}.").format(
-        tango='<a href="http://tango.freedesktop.org/">{0}</a>'.format(_(
-            "The Tango Desktop Project")))
-    
-    yield _("The following people contributed to {appname}:").format(
-        appname=info.appname)
-    # list other credits here
-    yield _("{author}: Kinetic Scrolling for the Music View").format(
-        author="Richard Cognot")
-    
-    yield _("{author}: Improved highlighting and auto-completion of Scheme code").format(
-		author="Nicolas Malarmey")
-	
-    yield _("{author}: Various contributions").format(
-		author="Urs Liska")
-	
-	
-    # translations
-    yield _(
-        "{appname} is translated into the following languages:").format(
-        appname=info.appname)
-    lang = QSettings().value("language", "", type("")) or None
-    langs = [(language_names.languageName(code, lang), names)
-             for code, names in info.translators.items()]
-    for lang, names in sorted(langs):
-        yield lang + ": " + (', '.join(names))
+import userguide.page
 
 
 class AboutDialog(QDialog):
@@ -139,7 +94,7 @@ class Credits(QTextBrowser):
         super(Credits, self).__init__(parent)
         self.setOpenLinks(False)
         self.anchorClicked.connect(helpers.openUrl)
-        self.setHtml('\n'.join(map('<p>{0}</p>'.format, credits())))
+        self.setHtml(userguide.page.Page('credits').body())
 
 
 class Version(QTextBrowser):
@@ -166,7 +121,7 @@ def html():
     version = _("Version {version}").format(version = info.version)
     description = _("A LilyPond Music Editor")
     copyright = _("Copyright (c) {year} by {author}").format(
-        year = "2008-2012",
+        year = "2008-2014",
         author = """<a href="mailto:{0}" title="{1}">{2}</a>""".format(
             info.maintainer_email,
             _("Send an e-mail message to the maintainers."),

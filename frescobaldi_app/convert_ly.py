@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -29,16 +29,17 @@ import subprocess
 
 from PyQt4.QtCore import QSettings, QSize
 from PyQt4.QtGui import (
-    QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit,
-    QTabWidget, QTextBrowser, QVBoxLayout)
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QGridLayout, QLabel,
+    QLineEdit, QTabWidget, QTextBrowser, QVBoxLayout)
 
 import app
 import util
 import qutil
+import icons
 import widgets
 import htmldiff
 import cursordiff
-import lilypondinfo
+import lilychooser
 import documentinfo
 import textformats
 
@@ -47,7 +48,6 @@ def convert(mainwindow):
     """Shows the dialog."""
     dlg = Dialog(mainwindow)
     dlg.addAction(mainwindow.actionCollection.help_whatsthis)
-    dlg.setLilyPondInfo(lilypondinfo.preferred())
     dlg.setDocument(mainwindow.currentDocument())
     dlg.setModal(True)
     dlg.show()
@@ -77,6 +77,7 @@ class Dialog(QDialog):
         self.reason = QLabel()
         self.toVersionLabel = QLabel()
         self.toVersion = QLineEdit()
+        self.lilyChooser = lilychooser.LilyChooser()
         self.messages = QTextBrowser()
         self.diff = QTextBrowser(lineWrapMode=QTextBrowser.NoWrap)
         self.copyCheck = QCheckBox(checked=
@@ -96,15 +97,15 @@ class Dialog(QDialog):
         layout = QVBoxLayout()
         self.setLayout(layout)
         
-        top = QHBoxLayout()
-        top.addWidget(self.fromVersionLabel)
-        top.addWidget(self.fromVersion)
-        top.addWidget(self.reason)
-        top.addStretch()
-        top.addWidget(self.toVersionLabel)
-        top.addWidget(self.toVersion)
+        grid = QGridLayout()
+        grid.addWidget(self.fromVersionLabel, 0, 0)
+        grid.addWidget(self.fromVersion, 0, 1)
+        grid.addWidget(self.reason, 0, 2, 1, 3)
+        grid.addWidget(self.toVersionLabel, 1, 0)
+        grid.addWidget(self.toVersion, 1, 1)
+        grid.addWidget(self.lilyChooser, 1, 3, 1, 2)
         
-        layout.addLayout(top)
+        layout.addLayout(grid)
         layout.addWidget(self.tabw)
         layout.addWidget(self.copyCheck)
         layout.addWidget(widgets.Separator())
@@ -115,6 +116,8 @@ class Dialog(QDialog):
         app.settingsChanged.connect(self.readSettings)
         self.readSettings()
         self.finished.connect(self.saveCopyCheckSetting)
+        self.lilyChooser.currentIndexChanged.connect(self.slotLilyPondVersionChanged)
+        self.slotLilyPondVersionChanged()
         
     def translateUI(self):
         self.fromVersionLabel.setText(_("From version:"))
@@ -134,7 +137,10 @@ class Dialog(QDialog):
     def readSettings(self):
         font = textformats.formatData('editor').font
         self.diff.setFont(font)
-        
+    
+    def slotLilyPondVersionChanged(self):
+        self.setLilyPondInfo(self.lilyChooser.lilyPondInfo())
+    
     def setCaption(self):
         version = self._info and self._info.versionString() or _("<unknown>")
         title = _("Convert-ly from LilyPond {version}").format(version=version)
@@ -145,6 +151,7 @@ class Dialog(QDialog):
         self.setCaption()
         self.toVersion.setText(info.versionString())
         self.setConvertedText()
+        self.messages.clear()
     
     def setConvertedText(self, text=''):
         self._convertedtext = text
@@ -161,7 +168,7 @@ class Dialog(QDialog):
         return self._convertedtext or ''
     
     def setDocument(self, doc):
-        v = documentinfo.info(doc).versionString()
+        v = documentinfo.docinfo(doc).version_string()
         if v:
             self.fromVersion.setText(v)
             self.reason.setText(_("(set in document)"))
@@ -180,16 +187,7 @@ class Dialog(QDialog):
                 "Both 'from' and 'to' versions need to be set."))
             return
         info = self._info
-        convert_ly = os.path.join(info.bindir(), info.convert_ly)
-        
-        # on Windows the convert-ly command is not directly executable, but
-        # must be started using the LilyPond-provided Python interpreter
-        if os.name == "nt":
-            if not os.access(convert_ly, os.R_OK) and not convert_ly.endswith('.py'):
-                convert_ly += '.py'
-            command = [info.python(), convert_ly]
-        else:
-            command = [convert_ly]
+        command = info.toolcommand(info.convert_ly)
         command += ['-f', fromVersion, '-t', toVersion, '-']
         
         # if the user wants english messages, do it also here: LANGUAGE=C

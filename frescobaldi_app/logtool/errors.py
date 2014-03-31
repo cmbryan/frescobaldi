@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,10 +23,11 @@ Manages cursor positions of file-references in error messages.
 
 from __future__ import unicode_literals
 
+import os
 import re
 import sys
 
-from PyQt4.QtCore import QUrl
+from PyQt4.QtCore import QSettings, QUrl
 from PyQt4.QtGui import QTextCursor
 
 import app
@@ -34,6 +35,7 @@ import bookmarks
 import plugin
 import job
 import jobmanager
+import jobattributes
 import scratchdir
 import util
 
@@ -63,6 +65,9 @@ class Errors(plugin.DocumentPlugin):
         listening for new output.
         
         """
+        # do not collect errors for auto-engrave jobs if the user has disabled it
+        if jobattributes.get(job).hidden and QSettings().value("log/hide_auto_engrave", False, bool):
+            return
         # clear earlier set error marks
         docs = set([self.document()])
         for ref in self._refs.values():
@@ -78,9 +83,9 @@ class Errors(plugin.DocumentPlugin):
         job.output.connect(self.slotJobOutput)
     
     def slotJobOutput(self, message, type):
-        """Called wheneven the job has output.
+        """Called whenever the job has output.
         
-        The output is checked for errormessages that contain
+        The output is checked for error messages that contain
         a filename:line:column expression.
         
         """
@@ -89,6 +94,7 @@ class Errors(plugin.DocumentPlugin):
             for m in message_re.finditer(message.encode('latin1')):
                 url = m.group(1).decode(enc)
                 filename = m.group(2).decode(enc)
+                filename = util.normpath(filename)
                 line, column = int(m.group(3)), int(m.group(4) or 0)
                 self._refs[url] = Reference(filename, line, column)
         

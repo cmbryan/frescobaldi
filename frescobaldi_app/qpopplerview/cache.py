@@ -1,6 +1,6 @@
 # This file is part of the qpopplerview package.
 #
-# Copyright (c) 2010 - 2012 by Wilbert Berendsen
+# Copyright (c) 2010 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,7 +30,7 @@ try:
 except ImportError:
     from . import popplerqt4_dummy as popplerqt4
 
-from PyQt4.QtCore import QThread
+from PyQt4.QtCore import Qt, QThread
 
 from . import render
 from . import rectangles
@@ -285,10 +285,14 @@ class Runner(QThread):
             pageSize.transpose()
         xres = 72.0 * self.job.width / pageSize.width()
         yres = 72.0 * self.job.height / pageSize.height()
+        threshold = options().oversampleThreshold() or options(self.document).oversampleThreshold()
+        multiplier = 2 if xres < threshold else 1
         with lock(self.document):
             options().write(self.document)
             options(self.document).write(self.document)
-            self.image = page.renderToImage(xres, yres, 0, 0, self.job.width, self.job.height, self.job.rotation)
+            self.image = page.renderToImage(xres * multiplier, yres * multiplier, 0, 0, self.job.width * multiplier, self.job.height * multiplier, self.job.rotation)
+        if multiplier == 2:
+            self.image = self.image.scaledToWidth(self.job.width, Qt.SmoothTransformation)
         
     def slotFinished(self):
         """Called when the thread has completed."""

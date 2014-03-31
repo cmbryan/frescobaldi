@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,20 +23,21 @@ Custom engraving dialog.
 
 from __future__ import unicode_literals
 
-import collections
 import os
+import collections
 
-from PyQt4.QtCore import QSettings, QSize
+from PyQt4.QtCore import QSettings, QSize, Qt
 from PyQt4.QtGui import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QGridLayout, QLabel, QTextEdit)
+    QGridLayout, QLabel, QSpinBox, QTextEdit)
 
 import app
 import documentinfo
-import help
+import userguide
 import icons
 import job
 import jobmanager
-import lilypondinfo
+import panelmanager
+import lilychooser
 import listmodel
 import widgets
 import qutil
@@ -46,15 +47,15 @@ from . import command
 
 
 class Dialog(QDialog):
-    def __init__(self, parent=None):
-        super(Dialog, self).__init__(parent)
+    def __init__(self, mainwindow):
+        super(Dialog, self).__init__(mainwindow)
         self._document = None
         
         layout = QGridLayout()
         self.setLayout(layout)
         
         self.versionLabel = QLabel()
-        self.versionCombo = QComboBox()
+        self.lilyChooser = lilychooser.LilyChooser()
         
         self.outputLabel = QLabel()
         self.outputCombo = QComboBox()
@@ -62,8 +63,12 @@ class Dialog(QDialog):
         self.resolutionLabel = QLabel()
         self.resolutionCombo = QComboBox(editable=True)
         
-        self.previewCheck = QCheckBox()
-        self.verboseCheck = QCheckBox()
+        self.antialiasLabel = QLabel()
+        self.antialiasSpin = QSpinBox(minimum=1, maximum=128, value=1)
+        
+        self.modeLabel = QLabel()
+        self.modeCombo = QComboBox()
+        
         self.englishCheck = QCheckBox()
         self.deleteCheck = QCheckBox()
         
@@ -73,25 +78,28 @@ class Dialog(QDialog):
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.button(QDialogButtonBox.Ok).setIcon(icons.get("lilypond-run"))
-        help.addButton(self.buttons, help_engrave_custom)
+        userguide.addButton(self.buttons, "engrave_custom")
         
         self.resolutionCombo.addItems(['100', '200', '300', '600', '1200'])
         self.resolutionCombo.setCurrentIndex(2)
         
+        self.modeCombo.addItems(['preview', 'publish', 'debug'])
         layout.addWidget(self.versionLabel, 0, 0)
-        layout.addWidget(self.versionCombo, 0, 1)
+        layout.addWidget(self.lilyChooser, 0, 1, 1, 3)
         layout.addWidget(self.outputLabel, 1, 0)
-        layout.addWidget(self.outputCombo, 1, 1)
+        layout.addWidget(self.outputCombo, 1, 1, 1, 3)
         layout.addWidget(self.resolutionLabel, 2, 0)
         layout.addWidget(self.resolutionCombo, 2, 1)
-        layout.addWidget(self.previewCheck, 3, 0, 1, 2)
-        layout.addWidget(self.verboseCheck, 4, 0, 1, 2)
-        layout.addWidget(self.englishCheck, 5, 0, 1, 2)
-        layout.addWidget(self.deleteCheck, 6, 0, 1, 2)
-        layout.addWidget(self.commandLineLabel, 7, 0, 1, 2)
-        layout.addWidget(self.commandLine, 8, 0, 1, 2)
-        layout.addWidget(widgets.Separator(), 9, 0, 1, 2)
-        layout.addWidget(self.buttons, 10, 0, 1, 2)
+        layout.addWidget(self.antialiasLabel, 2, 2, Qt.AlignRight)
+        layout.addWidget(self.antialiasSpin, 2, 3)
+        layout.addWidget(self.modeLabel, 3, 0)
+        layout.addWidget(self.modeCombo, 3, 1, 1, 3)
+        layout.addWidget(self.englishCheck, 4, 0, 1, 4)
+        layout.addWidget(self.deleteCheck, 5, 0, 1, 4)
+        layout.addWidget(self.commandLineLabel, 6, 0, 1, 4)
+        layout.addWidget(self.commandLine, 7, 0, 1, 4)
+        layout.addWidget(widgets.Separator(), 8, 0, 1, 4)
+        layout.addWidget(self.buttons, 9, 0, 1, 4)
         
         app.translateUI(self)
         qutil.saveDialogSize(self, "engrave/custom/dialog/size", QSize(480, 260))
@@ -109,25 +117,28 @@ class Dialog(QDialog):
         self.deleteCheck.setChecked(
             s.value("delete_intermediate_files", True, bool))
         
-        self.loadLilyPondVersions()
-        self.selectLilyPondInfo(lilypondinfo.preferred())
-        app.settingsChanged.connect(self.loadLilyPondVersions)
+        if s.value("default_output_target", "pdf", type("")) == "svg":
+            self.outputCombo.setCurrentIndex(3)
+        
         app.jobFinished.connect(self.slotJobFinished)
         self.outputCombo.currentIndexChanged.connect(self.makeCommandLine)
-        self.previewCheck.toggled.connect(self.makeCommandLine)
-        self.verboseCheck.toggled.connect(self.makeCommandLine)
+        self.modeCombo.currentIndexChanged.connect(self.makeCommandLine)
         self.deleteCheck.toggled.connect(self.makeCommandLine)
         self.resolutionCombo.editTextChanged.connect(self.makeCommandLine)
+        self.antialiasSpin.valueChanged.connect(self.makeCommandLine)
         self.makeCommandLine()
+        panelmanager.manager(mainwindow).layoutcontrol.widget().optionsChanged.connect(self.makeCommandLine)
     
     def translateUI(self):
         self.setWindowTitle(app.caption(_("Engrave custom")))
         self.versionLabel.setText(_("LilyPond Version:"))
         self.outputLabel.setText(_("Output Format:"))
         self.resolutionLabel.setText(_("Resolution:"))
-        self.previewCheck.setText(_(
-            "Run LilyPond in preview mode (with Point and Click)"))
-        self.verboseCheck.setText(_("Run LilyPond with verbose output"))
+        self.antialiasLabel.setText(_("Antialias Factor:"))
+        self.modeLabel.setText(_("Engraving mode:"))
+        self.modeCombo.setItemText(0, _("Preview"))
+        self.modeCombo.setItemText(1, _("Publish"))
+        self.modeCombo.setItemText(2, _("Layout Control"))
         self.englishCheck.setText(_("Run LilyPond with English messages"))
         self.deleteCheck.setText(_("Delete intermediate output files"))
         self.commandLineLabel.setText(_("Command line:"))
@@ -140,47 +151,34 @@ class Dialog(QDialog):
             self._document = None
     
     def setDocument(self, doc):
-        self.selectLilyPondInfo(command.info(doc))
+        self.lilyChooser.setLilyPondInfo(command.info(doc))
         if jobmanager.isRunning(doc):
             self._document = doc
             self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
         
-    def loadLilyPondVersions(self):
-        infos = lilypondinfo.infos() or [lilypondinfo.default()]
-        infos.sort(key = lambda i: i.version() or (999,))
-        self._infos = infos
-        index = self.versionCombo.currentIndex()
-        self.versionCombo.clear()
-        for i in infos:
-            icon = 'lilypond-run' if i.version() else 'dialog-error'
-            text = _("LilyPond {version} ({command})").format(
-                version=i.versionString(),
-                command=util.homify(i.command))
-            self.versionCombo.addItem(icons.get(icon), text)
-        self.versionCombo.setCurrentIndex(index)
-    
-    def selectLilyPondInfo(self, info):
-        if info in self._infos:
-            self.versionCombo.setCurrentIndex(self._infos.index(info))
-    
     def makeCommandLine(self):
         """Reads the widgets and builds a command line."""
         f = formats[self.outputCombo.currentIndex()]
         self.resolutionCombo.setEnabled('resolution' in f.widgets)
+        self.antialiasSpin.setEnabled('antialias' in f.widgets)
         cmd = ["$lilypond"]
-        if self.verboseCheck.isChecked():
-            cmd.append('--verbose')
-        if self.previewCheck.isChecked():
+        
+        if self.modeCombo.currentIndex() == 0:   # preview mode
             cmd.append('-dpoint-and-click')
-        else:
+        elif self.modeCombo.currentIndex() == 1: # publish mode
             cmd.append('-dno-point-and-click')
+        else:                                    # debug mode
+            args = panelmanager.manager(self.parent()).layoutcontrol.widget().preview_options()
+            cmd.extend(args)
+        
         if self.deleteCheck.isChecked():
             cmd.append('-ddelete-intermediate-files')
         else:
             cmd.append('-dno-delete-intermediate-files')
         d = {
-            'version': self._infos[self.versionCombo.currentIndex()].version,
+            'version': self.lilyChooser.lilyPondInfo().version,
             'resolution': self.resolutionCombo.currentText(),
+            'antialias': self.antialiasSpin.value(),
         }
         cmd.append("$include")
         cmd.extend(f.options(d))
@@ -189,13 +187,12 @@ class Dialog(QDialog):
     
     def getJob(self, document):
         """Returns a Job to start."""
-        filename, mode, includepath = documentinfo.info(document).jobinfo(True)
-        includepath.extend(documentinfo.info(document).includepath())
-        i = self._infos[self.versionCombo.currentIndex()]
+        filename, includepath = documentinfo.info(document).jobinfo(True)
+        i = self.lilyChooser.lilyPondInfo()
         cmd = []
         for t in self.commandLine.toPlainText().split():
             if t == '$lilypond':
-                cmd.append(i.abscommand())
+                cmd.append(i.abscommand() or i.command)
             elif t == '$filename':
                 cmd.append(filename)
             elif t == '$include':
@@ -210,30 +207,6 @@ class Dialog(QDialog):
         j.setTitle("{0} {1} [{2}]".format(
             os.path.basename(i.command), i.versionString(), document.documentName()))
         return j
-
-
-class help_engrave_custom(help.page):
-    def title():
-        return _("Engrave custom")
-    
-    def body():
-        p = '<p>{0}</p>\n'.format
-        text = [p(_("""\
-In this dialog you can set some parameters for the LilyPond command to be used
-to engrave your document.
-It is even possible to edit the command line itself.
-"""))]
-        text.append(p(_("The following replacements will be made:")))
-        text.append('<dl>\n')
-        for name, msg in (
-            ('$lilypond', _("The LilyPond executable")),
-            ('$include', _("All the include paths")),
-            ('$filename', _("The filename of the document")),
-            ):
-            text.append('<dt><code>{0}</code></dt>'.format(name))
-            text.append('<dd>{0}</dd>\n'.format(msg))
-        text.append('</dl>')
-        return ''.join(text)
 
 
 Format = collections.namedtuple("Format", "type title options widgets")
@@ -254,8 +227,12 @@ formats = [
     Format(
         "png",
         lambda: _("PNG"),
-        lambda d: ['--png', '-dresolution={resolution}'.format(**d)],
-        ('resolution',),
+        lambda d: [
+            '--png',
+            '-dresolution={resolution}'.format(**d),
+            '-danti-alias-factor={antialias}'.format(**d),
+        ],
+        ('resolution', 'antialias'),
     ),
     Format(
         "svg",
@@ -278,8 +255,13 @@ formats = [
     Format(
         "png",
         lambda: _("PNG (EPS Backend)"),
-        lambda d: ['--png', '-dbackend=eps', '-dresolution={resolution}'.format(**d)],
-        ('resolution',),
+        lambda d: [
+            '--png',
+            '-dbackend=eps',
+            '-dresolution={resolution}'.format(**d),
+            '-danti-alias-factor={antialias}'.format(**d),
+        ],
+        ('resolution', 'antialias'),
     ),
 ]
 

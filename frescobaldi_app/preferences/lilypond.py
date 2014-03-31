@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,7 +30,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
 import app
-import help.contents
+import userguide
 import util
 import icons
 import preferences
@@ -45,14 +45,15 @@ def settings():
     return s
 
 
-class LilyPondPrefs(preferences.GroupsPage):
+class LilyPondPrefs(preferences.ScrolledGroupsPage):
     def __init__(self, dialog):
         super(LilyPondPrefs, self).__init__(dialog)
 
         layout = QVBoxLayout()
-        self.setLayout(layout)
+        self.scrolledWidget.setLayout(layout)
 
         layout.addWidget(Versions(self))
+        layout.addWidget(Target(self))
         layout.addWidget(Running(self))
 
 
@@ -70,7 +71,7 @@ class Versions(preferences.Group):
         self.auto = QCheckBox(clicked=self.changed)
         layout.addWidget(self.auto)
         app.translateUI(self)
-        help.openWhatsThis(self)
+        userguide.openWhatsThis(self)
     
     def defaultButtonClicked(self):
         self._defaultCommand = self.instances.listBox.currentItem()._info.command
@@ -84,22 +85,8 @@ class Versions(preferences.Group):
         self.auto.setToolTip(_(
             "If checked, the document's version determines the LilyPond version to use.\n"
             "See \"What's This\" for more information."))
-        self.auto.setWhatsThis(_(
-            "<p>If this setting is enabled, the document is searched for a "
-            "LilyPond <code>\\version</code> command or a <code>version</code> "
-            "document variable.</p>\n"
-            "<p>The LilyPond version command looks like:</p>\n"
-            "<pre>\\version \"2.14.0\"</pre>\n"
-            "<p>The document variable looks like:</p>\n"
-            "<pre>-*- version: 2.14.0;</pre>\n"
-            "<p>somewhere (in a comments section) in the first or last 5 lines "
-            "of the document. "
-            "This way the LilyPond version to use can also be specified in non-LilyPond "
-            "documents like HTML, LaTeX, etc.</p>\n"
-            "<p>If the document specifies a version, the oldest suitable LilyPond version "
-            "is chosen. Otherwise, the default version is chosen.</p>\n"
-            ) +
-            _("See also {link}.").format(link=help.contents.document_variables.link()))
+        self.auto.setWhatsThis(userguide.html("prefs_lilypond_autoversion") +
+            _("See also {link}.").format(link=userguide.link("prefs_lilypond")))
 
     def loadSettings(self):
         s = settings()
@@ -162,6 +149,7 @@ class InfoList(widgets.listedit.ListEdit):
     def openEditor(self, item):
         dlg = self.infoDialog()
         dlg.loadInfo(item._info)
+        dlg.lilypond.lineEdit.setFocus()
         was_default = item._info.command == self.parentWidget()._defaultCommand
         if dlg.exec_():
             item._info = dlg.newInfo()
@@ -181,9 +169,8 @@ class InfoItem(QListWidgetItem):
         self._info = info
     
     def display(self):
-        text = util.homify(self._info.command)
+        text = self._info.prettyName()
         if self._info.version():
-            text += " ({0})".format(self._info.versionString())
             self.setIcon(icons.get("lilypond-run"))
         else:
             self.setIcon(icons.get("dialog-error"))
@@ -204,27 +191,33 @@ class InfoDialog(QDialog):
         grid.setSpacing(4)
         layout.addLayout(grid)
         
+        self.lilyname = QLineEdit()
+        self.lilynameLabel = l = QLabel()
+        l.setBuddy(self.lilyname)
+        grid.addWidget(l, 0, 0)
+        grid.addWidget(self.lilyname, 0, 1)
+        
         self.lilypond = widgets.urlrequester.UrlRequester()
         self.lilypond.setFileMode(QFileDialog.ExistingFile)
         self.lilypondLabel = l = QLabel()
         l.setBuddy(self.lilypond)
-        grid.addWidget(l, 0, 0, 1, 2)
-        grid.addWidget(self.lilypond, 1, 0, 1, 2)
+        grid.addWidget(l, 1, 0, 1, 2)
+        grid.addWidget(self.lilypond, 2, 0, 1, 2)
         
         self.convert_ly = QLineEdit()
         self.convert_lyLabel = l = QLabel()
         l.setBuddy(self.convert_ly)
-        grid.addWidget(l, 2, 0)
-        grid.addWidget(self.convert_ly, 2, 1)
+        grid.addWidget(l, 3, 0)
+        grid.addWidget(self.convert_ly, 3, 1)
         
         self.lilypond_book = QLineEdit()
         self.lilypond_bookLabel = l = QLabel()
         l.setBuddy(self.lilypond_book)
-        grid.addWidget(l, 3, 0)
-        grid.addWidget(self.lilypond_book, 3, 1)
+        grid.addWidget(l, 4, 0)
+        grid.addWidget(self.lilypond_book, 4, 1)
         
         self.auto = QCheckBox()
-        grid.addWidget(self.auto, 4, 1)
+        grid.addWidget(self.auto, 5, 1)
         
         layout.addWidget(widgets.Separator())
         b = self.buttons = QDialogButtonBox(self)
@@ -233,11 +226,13 @@ class InfoDialog(QDialog):
         b.setStandardButtons(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         b.accepted.connect(self.accept)
         b.rejected.connect(self.reject)
-        help.addButton(b, "preferences_lilypond")
+        userguide.addButton(b, "prefs_lilypond")
         app.translateUI(self)
         
     def translateUI(self):
         self.setWindowTitle(app.caption(_("LilyPond")))
+        self.lilynameLabel.setText(_("Label:"))
+        self.lilynameLabel.setToolTip(_("How this version of LilyPond will be displayed."))
         self.lilypondLabel.setText(_("LilyPond Command:"))
         self.lilypond.lineEdit.setToolTip(_("Name or full path of the LilyPond program."))
         self.convert_lyLabel.setText(_("Convert-ly:"))
@@ -246,6 +241,7 @@ class InfoDialog(QDialog):
         
     def loadInfo(self, info):
         """Takes over settings for the dialog from the LilyPondInfo object."""
+        self.lilyname.setText(info.name)
         self.lilypond.setPath(info.command)
         self.convert_ly.setText(info.convert_ly)
         self.lilypond_book.setText(info.lilypond_book)
@@ -258,6 +254,8 @@ class InfoDialog(QDialog):
                 self.lilypond.path() + '/Contents/Resources/bin/lilypond')
         else:
             info = lilypondinfo.LilyPondInfo(self.lilypond.path())
+        if self.lilyname.text() and not self.lilyname.text().isspace():
+            info.name = self.lilyname.text()
         info.auto = self.auto.isChecked()
         info.convert_ly = self.convert_ly.text()
         info.lilypond_book = self.lilypond_book.text()
@@ -317,5 +315,48 @@ class Running(preferences.Group):
         s.setValue("delete_intermediate_files", self.deleteFiles.isChecked())
         s.setValue("no_translation", self.noTranslation.isChecked())
         s.setValue("include_path", self.include.value())
+
+
+class Target(preferences.Group):
+    def __init__(self, page):
+        super(Target, self).__init__(page)
+        
+        layout = QHBoxLayout()
+        self.setLayout(layout)
+        
+        self.targetPDF = QRadioButton(toggled=page.changed)
+        self.targetSVG = QRadioButton(toggled=page.changed)
+        
+        layout.addWidget(self.targetPDF)
+        layout.addWidget(self.targetSVG)
+        layout.addStretch()
+        app.translateUI(self)
+        
+    def translateUI(self):
+        self.setTitle(_("Default output format"))
+        self.targetPDF.setText(_("PDF"))
+        self.targetPDF.setToolTip(_(
+            "Create PDF (Portable Document Format) documents by default."))
+        self.targetSVG.setText(_("SVG"))
+        self.targetSVG.setToolTip(_(
+            "Create SVG (Scalable Vector Graphics) documents by default."))
+    
+    def loadSettings(self):
+        s = settings()
+        target = s.value("default_output_target", "pdf", type(""))
+        if target == "svg":
+            self.targetSVG.setChecked(True)
+            self.targetPDF.setChecked(False)
+        else:
+            self.targetSVG.setChecked(False)
+            self.targetPDF.setChecked(True)
+        
+    def saveSettings(self):
+        s = settings()
+        if self.targetSVG.isChecked():
+            target = "svg"
+        else:
+            target = "pdf"
+        s.setValue("default_output_target", target)
 
 

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -33,7 +33,7 @@ import app
 import widgets.listedit
 import widgets.urlrequester
 import sessions
-import help
+import userguide
 
 
 class SessionManagerDialog(QDialog):
@@ -52,7 +52,7 @@ class SessionManagerDialog(QDialog):
         layout.addWidget(b)
         b.setStandardButtons(QDialogButtonBox.Close)
         b.rejected.connect(self.accept)
-        help.addButton(b, "sessions")
+        userguide.addButton(b, "sessions")
         self.sessions.load()
 
 
@@ -108,7 +108,7 @@ class SessionEditor(QDialog):
         b.setStandardButtons(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         b.accepted.connect(self.accept)
         b.rejected.connect(self.reject)
-        help.addButton(b, "sessions")
+        userguide.addButton(b, "sessions")
         app.translateUI(self)
         
     def translateUI(self):
@@ -174,10 +174,10 @@ class SessionEditor(QDialog):
                 self.name.setText(self._originalName)
             return False
         
-        elif name == 'none':
+        elif name == '-':
             self.name.setFocus()
             QMessageBox.warning(self, app.caption(_("Warning")),
-                _("Please do not use the name '{name}'.".format(name="none")))
+                _("Please do not use the name '{name}'.".format(name="-")))
             return False
         
         elif self._originalName != name and name in sessions.sessionNames():

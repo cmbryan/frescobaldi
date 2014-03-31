@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -231,9 +231,8 @@ class ScoreProperties(object):
     def createTempoWidget(self):
         self.tempoLabel = QLabel()
         self.tempo = widgets.lineedit.LineEdit()
-        c = QCompleter(completionmodel.model("scorewiz/completion/scoreproperties/tempo"), self.tempo)
-        c.setCaseSensitivity(Qt.CaseInsensitive)
-        self.tempo.setCompleter(c)
+        completionmodel.complete(self.tempo, "scorewiz/completion/scoreproperties/tempo")
+        self.tempo.completer().setCaseSensitivity(Qt.CaseInsensitive)
         self.tempoLabel.setBuddy(self.tempo)
 
     def layoutTempoWidget(self, layout):
@@ -244,12 +243,6 @@ class ScoreProperties(object):
 
     def translateTempoWidget(self):
         self.tempoLabel.setText(_("Tempo indication:"))
-
-    def saveCompletions(self):
-        """Saves the completions in the tempo line edit."""
-        text = self.tempo.text().strip()
-        if text:
-            self.tempo.completer().model().addString(text)
 
     def lyTempo(self, node, builder):
         """Returns an appropriate tempo indication."""
@@ -275,6 +268,12 @@ class ScoreProperties(object):
         base, mul = midiDurations[self.metronomeNote.currentIndex()]
         val = int(self.metronomeValue.currentText()) * mul
         return "(ly:make-moment {0} {1})".format(val, base)
+    
+    def lySimpleMidiTempo(self, node):
+        """Return a simple \tempo x=y node for the currently set tempo."""
+        dur = durations[self.metronomeNote.currentIndex()]
+        val = self.metronomeValue.currentText()
+        return ly.dom.Tempo(dur, val, node)
         
 
 def metronomeValues():

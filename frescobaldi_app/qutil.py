@@ -1,6 +1,6 @@
 # qutil.py -- various Qt4-related utility functions
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -151,7 +151,7 @@ def getAccelerator(text):
         return m.group(1).lower()
 
 
-def removeAccelelator(text):
+def removeAccelerator(text):
     """Removes accelerator ampersands from a QAction.text() string."""
     return text.replace('&&', '\0').replace('&', '').replace('\0', '&')
 

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2011 - 2012 by Wilbert Berendsen
+# Copyright (c) 2011 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -110,7 +110,7 @@ class DocumentDataSource(plugin.DocumentPlugin):
     @util.keep
     def lyriccommands(self, cursor):
         return listmodel.ListModel(sorted(set(itertools.chain(
-            ('set stanza = ', 'set', 'override', 'markup', 'notemode'),
+            ('set stanza = ', 'set', 'override', 'markup', 'notemode', 'repeat'),
             harvest.include_identifiers(cursor),
             harvest.names(cursor)))), display = util.command)
 
@@ -120,8 +120,8 @@ class DocumentDataSource(plugin.DocumentPlugin):
         If the document has a local filename, looks in that directory,
         also in a subdirectory of it, if the directory argument is given.
         
-        Then looks in the user-set include paths, and finally in LilyPond's
-        own ly/ folder.
+        Then looks recursively in the user-set include paths, 
+        and finally in LilyPond's own ly/ folder.
         
         """
         names = []
@@ -139,7 +139,12 @@ class DocumentDataSource(plugin.DocumentPlugin):
         # names in specified include paths
         import documentinfo
         for basedir in documentinfo.info(self.document()).includepath():
-            names.extend(sorted(get_filenames(basedir)))
+            
+            # store dir relative to specified include path root
+            reldir = directory if directory else ""
+            # look for files in the current relative directory
+            for f in sorted(get_filenames(os.path.join(basedir, reldir), True)):
+                names.append(os.path.join(reldir, f))
         
         # names from LilyPond itself
         import engrave.command

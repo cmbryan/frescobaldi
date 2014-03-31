@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -58,9 +58,9 @@ class Document(QTextDocument):
         app.documentModificationChanged(self)
 
     def close(self):
-        app.documents.remove(self)
         self.closed()
         app.documentClosed(self)
+        app.documents.remove(self)
 
     def load(self, keepUndo=False):
         """Loads the current url.

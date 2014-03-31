@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,6 @@ Builds the LilyPond score from the settings in the Score Wizard.
 
 from __future__ import unicode_literals
 
-import __builtin__
 import collections
 import fractions
 import re
@@ -172,6 +171,7 @@ class Builder(object):
         self.pitchLanguage = dialog.pitchLanguage()
         self.suppressTagLine = generalPreferences.tagl.isChecked()
         self.removeBarNumbers = generalPreferences.barnum.isChecked()
+        self.smartNeutralDirection = generalPreferences.neutdir.isChecked()
         self.showMetronomeMark = generalPreferences.metro.isChecked()
         self.paperSize = generalPreferences.getPaperSize()
         self.paperLandscape = generalPreferences.paperLandscape.isChecked()
@@ -181,7 +181,7 @@ class Builder(object):
         self.otherInstrumentName = names[instrumentNames.otherSystems.currentIndex()]
         
         # translator for instrument names
-        self._ = __builtin__._
+        self._ = _
         if instrumentNames.isChecked():
             lang = instrumentNames.getLanguage()
             if lang == 'C':
@@ -260,7 +260,11 @@ class Builder(object):
                 midi = ly.dom.Midi(score)
                 # set MIDI tempo if necessary
                 if not self.showMetronomeMark:
-                    scoreProperties.lyMidiTempo(ly.dom.Context('Score', midi))
+                    if self.lyVersion >= (2, 16, 0):
+                        scoreProperties.lySimpleMidiTempo(midi)
+                        midi[0].after = 1
+                    else:
+                        scoreProperties.lyMidiTempo(ly.dom.Context('Score', midi))
             music = ly.dom.Simr()
             score.insert(0, music)
             
@@ -271,6 +275,12 @@ class Builder(object):
                 
             # make the parts
             partData = self.makeParts(group.parts, _PartData)
+            
+            # record the include files a part wants to add
+            for p in partData:
+                for i in p.includes:
+                    if i not in self._includeFiles:
+                        self._includeFiles.append(i)
             
             # collect all 'prefixable' assignments for this group
             assignments = []
@@ -415,11 +425,21 @@ class Builder(object):
             ).after = 1
             ly.dom.BlankLine(doc)
 
+        layout = ly.dom.Layout()
+        
         # remove bar numbers
         if self.removeBarNumbers:
             ly.dom.Line('\\remove "Bar_number_engraver"',
-                ly.dom.Context('Score',
-                    ly.dom.Layout(doc)))
+                ly.dom.Context('Score', layout))
+        
+        # smart neutral direction
+        if self.smartNeutralDirection:
+            ctxt_voice = ly.dom.Context('Voice', layout)
+            ly.dom.Line('\\consists "Melody_engraver"', ctxt_voice)
+            ly.dom.Line("\\override Stem #'neutral-direction = #'()", ctxt_voice)
+        
+        if len(layout):
+            doc.append(layout)
             ly.dom.BlankLine(doc)
 
         # global section

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,9 +28,10 @@ from __future__ import unicode_literals
 
 import weakref
 
-from PyQt4.QtCore import QEvent, Qt, QTimer, pyqtSignal
+from PyQt4.QtCore import QEvent, QSettings, Qt, QTimer, pyqtSignal
 from PyQt4.QtGui import (
-    QApplication, QKeySequence, QPainter, QPlainTextEdit, QTextCursor)
+    QApplication, QContextMenuEvent, QKeySequence, QPainter, QPlainTextEdit,
+    QTextCursor)
 
 import app
 import homekey
@@ -70,22 +71,52 @@ class View(QPlainTextEdit):
         self.restoreCursor()
         app.settingsChanged.connect(self.readSettings)
         self.readSettings() # will also call updateCursor
+        # line wrap preference is only read on init
+        wrap = QSettings().value("view_preferences/wrap_lines", False, bool)
+        self.setLineWrapMode(QPlainTextEdit.WidgetWidth if wrap else QPlainTextEdit.NoWrap)
         app.viewCreated(self)
 
     def event(self, ev):
-        # avoid the line separator, makes no sense in plain text
-        if ev == QKeySequence.InsertLineSeparator:
+        if ev in (
+                # avoid the line separator, makes no sense in plain text
+                QKeySequence.InsertLineSeparator,
+                # those can better be called via the menu actions, then they
+                # work better
+                QKeySequence.Undo,
+                QKeySequence.Redo,
+            ):
             return False
         # handle Tab and Backtab
         if ev.type() == QEvent.KeyPress:
-            modifiers = int(ev.modifiers() & (Qt.SHIFT | Qt.CTRL | Qt.ALT | Qt.META))
-            if ev.key() == Qt.Key_Tab and modifiers == 0:
+            cursor = self.textCursor()
+            if ev.key() == Qt.Key_Tab and ev.modifiers() == Qt.NoModifier:
+                # tab pressed, insert a tab when no selection and in text,
+                # else increase the indent
+                if not cursor.hasSelection():
+                    block = cursor.block()
+                    text = block.text()[:cursor.position() - block.position()]
+                    if text and not text.isspace():
+                        if variables.get(self.document(), 'document-tabs', True):
+                            cursor.insertText('\t')
+                        else:
+                            tabwidth = variables.get(self.document(), 'tab-width', 8)
+                            spaces = tabwidth - len(text.expandtabs(tabwidth)) % tabwidth
+                            cursor.insertText(' ' * spaces)
+                        self.setTextCursor(cursor)
+                        return True
                 import indent
-                indent.increase_indent(self.textCursor())
+                indent.increase_indent(cursor)
+                if not cursor.hasSelection():
+                    cursortools.strip_indent(cursor)
+                    self.setTextCursor(cursor)
                 return True
-            elif ev.key() == Qt.Key_Backtab and modifiers & ~Qt.SHIFT == 0:
+            elif ev.key() == Qt.Key_Backtab and ev.modifiers() == Qt.ShiftModifier:
+                # shift-tab pressed, decrease the indent
                 import indent
-                indent.decrease_indent(self.textCursor())
+                indent.decrease_indent(cursor)
+                if not cursor.hasSelection():
+                    cursortools.strip_indent(cursor)
+                    self.setTextCursor(cursor)
                 return True
         return super(View, self).event(ev)
 
@@ -99,13 +130,9 @@ class View(QPlainTextEdit):
             import indent
             cursor = self.textCursor()
             if ev.text() == '\r' or (ev.text() in ('}', '#', '>') and indent.indentable(cursor)):
-                with cursortools.compress_undo(cursor, True):
-                    indent.auto_indent_block(cursor.block())
-                # keep the cursor at the indent position on vertical move
-                cursor = self.textCursor()
-                pos = cursor.position()
-                cursor.setPosition(cursor.block().position()) # move horizontal
-                cursor.setPosition(pos) # move back to position
+                indent.auto_indent_block(cursor.block())
+                # fix subsequent vertical moves
+                cursor.setPosition(cursor.position())
                 self.setTextCursor(cursor)
             
     def focusOutEvent(self, ev):
@@ -171,7 +198,45 @@ class View(QPlainTextEdit):
 
     def setTabWidth(self):
         """(Internal) Reads the tab-width variable and the font settings to set the tabStopWidth."""
-        tabwidth = self.fontMetrics().width(" ") * variables.get(self.document(), 'tab-width', 8)
+        tabwidth = QSettings().value("indent/tab_width", 8, int)
+        tabwidth = self.fontMetrics().width(" ") * variables.get(self.document(), 'tab-width', tabwidth)
         self.setTabStopWidth(tabwidth)
+    
+    def contextMenuEvent(self, ev):
+        """Called when the user requests the context menu."""
+        cursor = self.textCursor()
+        if ev.reason() == QContextMenuEvent.Mouse:
+            # if clicked inside the selection, retain it, otherwise de-select
+            # and move the cursor to the clicked position
+            pos = self.mapToGlobal(ev.pos())
+            clicked = self.cursorForPosition(ev.pos())
+            if not cursor.selectionStart() <= clicked.position() < cursor.selectionEnd():
+                self.setTextCursor(clicked)
+        else:
+            pos = self.viewport().mapToGlobal(self.cursorRect().center())
+        import contextmenu
+        menu = contextmenu.contextmenu(self)
+        menu.popup(pos)
+        menu.setFocus() # so we get a FocusOut event and the grey cursor gets painted
+        menu.exec_()
+        menu.deleteLater()
+
+    def mousePressEvent(self, ev):
+        """Called when a mouse button is clicked."""
+        # implements ctrl-click
+        if ev.button() == Qt.LeftButton and ev.modifiers() == Qt.ControlModifier:
+            cursor = self.textCursor()
+            clicked = self.cursorForPosition(ev.pos())
+            if cursor.selectionStart() <= clicked.position() < cursor.selectionEnd():
+                clicked = cursor
+            # include files?
+            import open_file_at_cursor
+            if open_file_at_cursor.open_file_at_cursor(self.window(), clicked):
+                return
+            # go to definition?
+            import definition
+            if definition.goto_definition(self.window(), clicked):
+                return
+        super(View, self).mousePressEvent(ev)
 
 

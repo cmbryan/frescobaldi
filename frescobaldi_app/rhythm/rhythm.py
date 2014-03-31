@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2011 - 2012 by Wilbert Berendsen
+# Copyright (c) 2011 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -27,20 +27,10 @@ from __future__ import unicode_literals
 
 import itertools
 
-from PyQt4.QtGui import QTextCursor
-
-import app
-import help
 import icons
 import inputdialog
-import cursortools
-import tokeniter
-import ly.lex.lilypond
-import music
-
-
-durations = ['\\maxima', '\\longa', '\\breve',
-    '1', '2', '4', '8', '16', '32', '64', '128', '256', '512', '1024', '2048']
+import lydocument
+import ly.rhythm
 
 
 _clipboard = [] # clipboard for rhythm copy and paste
@@ -49,233 +39,49 @@ _history = set() # earlier rhythms typed in apply dialog
 
 
 def rhythm_double(cursor):
-    with cursortools.Editor() as e:
-        for b, d in duration_items(cursor, ly.lex.lilypond.Length):
-            for t in d:
-                try:
-                    i = durations.index(t)
-                except ValueError:
-                    continue
-                if i > 0:
-                    e.insertText(tokeniter.cursor(b, t), durations[i - 1])
+    ly.rhythm.rhythm_double(lydocument.cursor(cursor))
 
 def rhythm_halve(cursor):
-    with cursortools.Editor() as e:
-        for b, d in duration_items(cursor, ly.lex.lilypond.Length):
-            for t in d:
-                try:
-                    i = durations.index(t)
-                except ValueError:
-                    continue
-                if i < len(durations) - 1:
-                    e.insertText(tokeniter.cursor(b, t), durations[i + 1])
-    
+    ly.rhythm.rhythm_halve(lydocument.cursor(cursor))
+
 def rhythm_dot(cursor):
-    with cursortools.Editor() as e:
-        for b, d in duration_items(cursor, ly.lex.lilypond.Length):
-            for t in d:
-                e.insertText(tokeniter.cursor(b, t, start=len(t)), ".")
+    ly.rhythm.rhythm_dot(lydocument.cursor(cursor))
 
 def rhythm_undot(cursor):
-    with cursortools.Editor() as e:
-        for b, d in duration_items(cursor, ly.lex.lilypond.Dot):
-            if d:
-                e.removeSelectedText(tokeniter.cursor(b, d[0]))
+    ly.rhythm.rhythm_undot(lydocument.cursor(cursor))
 
 def rhythm_remove_scaling(cursor):
-    with cursortools.compress_undo(cursor):
-        for c in cursors(cursor, ly.lex.lilypond.Scaling):
-            c.removeSelectedText()
+    ly.rhythm.rhythm_remove_scaling(lydocument.cursor(cursor))
+
+def rhythm_remove_fraction_scaling(cursor):
+    ly.rhythm.rhythm_remove_fraction_scaling(lydocument.cursor(cursor))
 
 def rhythm_remove(cursor):
-    with cursortools.compress_undo(cursor):
-        for c in cursors(cursor, ly.lex.lilypond.Duration):
-            c.removeSelectedText()
+    ly.rhythm.rhythm_remove(lydocument.cursor(cursor))
 
 def rhythm_implicit(cursor):
-    items = duration_cursor_items(cursor)
-    for c, d in items:
-        break
-    else:
-        return
-    prev = d or preceding(cursor)
-    with cursortools.Editor() as e:
-        for c, d in items:
-            if d:
-                if d == prev:
-                    e.removeSelectedText(c)
-                prev = d
+    ly.rhythm.rhythm_implicit(lydocument.cursor(cursor))
 
 def rhythm_implicit_per_line(cursor):
-    items = duration_cursor_items(cursor)
-    for c, d in items:
-        break
-    else:
-        return
-    prevblock = c.block()
-    prev = d or preceding(cursor)
-    with cursortools.Editor() as e:
-        for c, d in items:
-            if c.block() != prevblock:
-                if not d:
-                    e.insertText(c, ''.join(prev))
-                else:
-                    prev = d
-                prevblock = c.block()
-            elif d:
-                if d == prev:
-                    e.removeSelectedText(c)
-                prev = d
+    ly.rhythm.rhythm_implicit_per_line(lydocument.cursor(cursor))
 
 def rhythm_explicit(cursor):
-    items = duration_cursor_items(cursor)
-    for c, d in items:
-        break
-    else:
-        return
-    prev = d or preceding(cursor)
-    with cursortools.Editor() as e:
-        for c, d in items:
-            if d:
-                prev = d
-            else:
-                e.insertText(c, ''.join(prev))
+    ly.rhythm.rhythm_explicit(lydocument.cursor(cursor))
 
 def rhythm_apply(cursor, mainwindow):
     durs = inputdialog.getText(mainwindow,
         _("Apply Rhythm"), _("Enter a rhythm:"),
         complete = sorted(_history),
         regexp = r'([0-9./* ]|\\breve|\\longa|\\maxima)+',
-        help = rhythm_help, icon = icons.get('tools-rhythm'))
-    if durs and durs.split():
+        help = "rhythm", icon = icons.get('tools-rhythm'))
+    durations = durs.split()
+    if durations:
         _history.add(durs.strip())
-        duration_source = remove_dups(itertools.cycle(durs.split()))
-        with cursortools.Editor() as e:
-            for c, d in duration_cursor_items(cursor):
-                e.insertText(c, next(duration_source))
+    ly.rhythm.rhythm_overwrite(lydocument.cursor(cursor), durations)
 
 def rhythm_copy(cursor):
-    del _clipboard[:]
-    for b, d in duration_items(cursor, ly.lex.lilypond.Duration):
-        _clipboard.append(''.join(d))
-    if _clipboard and _clipboard[0] == '':
-        prec = preceding(cursor)
-        if prec:
-            _clipboard[0] = ''.join(prec)
+    _clipboard[:] = ly.rhythm.rhythm_extract(lydocument.cursor(cursor))
 
 def rhythm_paste(cursor):
-    duration_source = itertools.cycle(_clipboard)
-    with cursortools.Editor() as e:
-        for c, d in duration_cursor_items(cursor):
-            e.insertText(c, next(duration_source))
-
-def remove_dups(iterable):
-    old = None
-    for i in iterable:
-        yield '' if i == old else i
-        old = i
-
-def duration_items(cursor, *classes):
-    """Yields block, list where tokens in list are instance of *classes."""
-    source = tokeniter.Source.selection(cursor, True)
-    for m in music.music_items(source):
-        yield source.block, [token for token in m if isinstance(token, classes)]
-
-def duration_cursor_items(cursor):
-    """Yields two-tuples (cursor, list of duration tokens).
-    
-    The list of duration tokens may be empty. This can be used to find
-    the places to insert or overwrite durations in the selected music.
-    
-    """
-    source = tokeniter.Source.selection(cursor, True)
-    for m in music.music_items(source):
-        i = iter(m)
-        c = QTextCursor(source.block)
-        for t in i:
-            if isinstance(t, ly.lex.lilypond.Duration):
-                l = [t]
-                c.setPosition(source.block.position() + t.pos)
-                for t in i:
-                    if isinstance(t, ly.lex.lilypond.Duration):
-                        l.append(t)
-                    elif not isinstance(t, ly.lex.Space):
-                        break
-                c.setPosition(source.block.position() + l[-1].end, c.KeepAnchor)
-                break
-        else:
-            c.setPosition(source.block.position() + t.end)
-            l = []
-        yield c, l
-
-def cursors(cursor, *classes):
-    """Returns a list of cursors for the duration_items() with same args."""
-    return [tokeniter.cursor(b, t)
-        for b, d in duration_items(cursor, *classes) for t in d]
-
-def preceding(cursor):
-    """Returns a preceding duration before the cursor, or an empty list."""
-    c = QTextCursor(cursor)
-    c.setPosition(cursor.selectionStart())
-    for tokens in back(c):
-        for t in tokens:
-            if isinstance(t, ly.lex.lilypond.Duration):
-                l = [t]
-                for t in tokens:
-                    if isinstance(t, ly.lex.lilypond.Duration):
-                        l.append(t)
-                    elif not isinstance(t, ly.lex.Space):
-                        break
-                l.reverse()
-                return l
-    return []
-
-def back(cursor):
-    """Yields per-block token iters in backward direction from the cursor."""
-    yield reversed(tokeniter.partition(cursor).left)
-    block = cursor.block()
-    while block.previous().isValid():
-        block = block.previous()
-        yield reversed(tokeniter.tokens(block))
-
-
-class rhythm_help(help.page):
-    def title():
-        return _("Rhythm manipulation")
-    
-    def body():
-        return _("""\
-<p>
-The rhythm functions of Frescobaldi alter the durations written after notes,
-chords, rests, etcetera. Using those functions, all in menu {menu}, it
-is possible to double or halve the length of notes, to add or remove dots
-and to remove scaling factors.
-</p>
-
-<p>
-Also it is possible to change the way rhythm is specified: for every note
-(explicit), or only when the duration changes (implicit). Some users may prefer
-the option implicit per line, which always specifies the duration for the first
-note, chord or rest on a line.
-</p>
-
-<p>
-The last three menu commands can copy, paste or apply a rhythm that is entered
-in a dialog.
-</p>
-
-<p>
-In the "Apply Rhythm" dialog you can enter a series of durations, e.g.:
-</p>
-
-<p>
-<code>4. 8 4 16 16 8 2</code>
-</p>
-
-<p>
-which will then, repetitively, be applied to a selection of notes.
-</p>
-""").format(menu=help.menu(
-    _("menu title", "Tools"), _("submenu title", "Rhythm")))
-
+    ly.rhythm.rhythm_overwrite(lydocument.cursor(cursor), _clipboard)
 

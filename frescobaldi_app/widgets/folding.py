@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2012 - 2012 by Wilbert Berendsen
+# Copyright (c) 2012 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -405,13 +405,22 @@ class Folder(QObject):
         self.mark(r.start, False)
         self.document().markContentsDirty(r.start.position(), r.end.position())
         
-    def fold_all(self):
+    def fold_toplevel(self):
         """Folds all toplevel regions, without touching inner regions."""
         for block in cursortools.all_blocks(self.document()):
             if not block.isVisible():
                 continue
             elif self.fold_level(block).start:
                 self.fold(block)
+    
+    def fold_all(self):
+        """Folds all regions."""
+        for block in cursortools.all_blocks(self.document()):
+            if self.fold_level(block).start:
+                if block.isVisible():
+                    self.fold(block)
+                else:
+                    self.mark(block, True)
     
     def unfold_all(self):
         """Fully unfolds the document."""

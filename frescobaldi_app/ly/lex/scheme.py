@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -61,17 +61,17 @@ class LineComment(Comment, _token.LineComment):
     rx = r";.*$"
     
 
-class BlockCommentStart(Comment, _token.BlockCommentStart, _token.Indent):
+class BlockCommentStart(Comment, _token.BlockCommentStart):
     rx = r"#!"
     def update_state(self, state):
         state.enter(ParseBlockComment())
         
 
-class BlockCommentEnd(Comment, _token.BlockCommentEnd, _token.Leaver, _token.Dedent):
+class BlockCommentEnd(Comment, _token.BlockCommentEnd, _token.Leaver):
     rx = "!#"
 
 
-class BlockCommentSpace(Comment, _token.Space):
+class BlockComment(Comment, _token.BlockComment):
     pass
 
 
@@ -91,11 +91,13 @@ class CloseParen(Scheme, _token.MatchEnd, _token.Dedent):
         
 
 class Quote(Scheme):
-    rx = r"'"
-    def update_state(self, state):
-        state.enter(ParseSchemeSymbol())
+    rx = r"['`,]"
     
     
+class Dot(Scheme):
+    rx = r"\.(?!\S)"
+
+
 class Bool(Scheme, _token.Item):
     rx = r"#[tf]\b"
     
@@ -108,60 +110,48 @@ class Word(Scheme, _token.Item):
     rx = r'[^()"{}\s]+'
 
 
-class Keyword(Scheme):
-    @_token.patternproperty
-    def rx():
+class Keyword(Word):
+    @classmethod
+    def test_match(cls, match):
         from .. import data
-        import re
-        lst = re.sub(r'([\?\*\+])', r"\\\1", 
-                     "|".join(sorted(data.scheme_keywords(), key=len, reverse=True)))
-        return r"({0})(?![A-Za-z-])".format(lst)
-    
+        return match.group() in data.scheme_keywords()
+
+
 class Function(Word):
-    @_token.patternproperty
-    def rx():
+    @classmethod
+    def test_match(cls, match):
         from .. import data
-        import re
-        lst = re.sub(r'([\?\*\+])', r"\\\1", 
-                     "|".join(sorted(data.scheme_functions(), key=len, reverse=True)))
-        return r"({0})(?![A-Za-z-])".format(lst)
-    
+        return match.group() in data.scheme_functions()
+
+
 class Variable(Word):
-    @_token.patternproperty
-    def rx():
+    @classmethod
+    def test_match(cls, match):
         from .. import data
-        import re
-        lst = re.sub(r'([\?\*\+])', r"\\\1", 
-                     "|".join(sorted(data.scheme_variables(), key=len, reverse=True)))
-        return r"({0})(?![A-Za-z-])".format(lst)
-    
-    
+        return match.group() in data.scheme_variables()
+
+
 class Constant(Word):
-    @_token.patternproperty
-    def rx():
+    @classmethod
+    def test_match(cls, match):
         from .. import data
-        import re
-        lst = re.sub(r'([\?\*\+])', r"\\\1", 
-                     "|".join(sorted(data.scheme_constants(), key=len, reverse=True)))
-        return r"({0})(?![A-Za-z-])".format(lst)
-    
-class Symbol(Word):
-    rx = r"[a-zA-Z-]+(?![a-zA-Z])"
-    def update_state(self, state):
-        state.leave()
-        state.endArgument()
-    
+        return match.group() in data.scheme_constants()
+
 
 class Number(_token.Item, _token.Numeric):
-    rx = r"-?\d+|#(b[0-1]+|o[0-7]+|x[0-9a-fA-F]+)"
-    
+    rx = (r"("
+          r"-?\d+|"
+          r"#(b[0-1]+|o[0-7]+|x[0-9a-fA-F]+)|"
+          r"[-+]inf.0|[-+]?nan.0"
+          r")(?=$|[)\s])")
+
 
 class Fraction(Number):
-    rx = r"-?\d+/\d+"
+    rx = r"-?\d+/\d+(?=$|[)\s])"
 
 
 class Float(Number):
-    rx = r"-?((\d+(\.\d*)|\.\d+)(E\d+)?)"
+    rx = r"-?((\d+(\.\d*)|\.\d+)(E\d+)?)(?=$|[)\s])"
 
 
 class LilyPond(_token.Token):
@@ -191,25 +181,22 @@ class ParseScheme(Parser):
         LineComment,
         BlockCommentStart,
         LilyPondStart,
+        Dot,
         Bool,
         Char,
         Quote,
         Fraction,
+        Float,
+        Number,
+        Constant,
         Keyword,
         Function,
         Variable,
-        Constant,
-        Float,
-        Number,
         Word,
         StringQuotedStart,
     )
     
 
-class ParseSchemeSymbol(FallthroughParser):
-    mode = 'scheme'
-    items = (Symbol,)
-   
 class ParseString(Parser):
     default = String
     items = (
@@ -219,14 +206,13 @@ class ParseString(Parser):
     
 
 class ParseBlockComment(Parser):
-    default = Comment
+    default = BlockComment
     items = (
-        BlockCommentSpace,
         BlockCommentEnd,
     )
 
 
-import lilypond
+from . import lilypond
 
 class ParseLilyPond(lilypond.ParseMusic):
     items = (LilyPondEnd,) + lilypond.ParseMusic.items

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -27,10 +27,10 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
 import app
-import cursortools
 import indent
 import qutil
-import help
+import userguide
+import ly.document
 
 
 class ScoreWizardDialog(QDialog):
@@ -41,7 +41,6 @@ class ScoreWizardDialog(QDialog):
         super(ScoreWizardDialog, self).__init__(mainwindow)
         self.addAction(mainwindow.actionCollection.help_whatsthis)
         self._pitchLanguage = None
-        self._createNewDocument = False
         
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -53,7 +52,7 @@ class ScoreWizardDialog(QDialog):
             | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         b.accepted.connect(self.accept)
         b.rejected.connect(self.reject)
-        help.addButton(b, scorewiz_help)
+        userguide.addButton(b, "scorewiz")
         b.button(QDialogButtonBox.Reset).clicked.connect(self.reset)
         self.previewButton = b.addButton('', QDialogButtonBox.ActionRole)
         self.previewButton.clicked.connect(self.showPreview)
@@ -105,27 +104,18 @@ class ScoreWizardDialog(QDialog):
             self._pitchLanguage = lang
         return self._pitchLanguage
 
-    def show(self, create_new_document=False):
-        """Display ourselves.
-        
-        If create_new_document is True, clicking OK will write the
-        generated template into a newly created Document.
-        
-        """
-        self._createNewDocument = create_new_document
-        super(ScoreWizardDialog, self).show()
-        
     def slotAccepted(self):
         """Makes the score and puts it in the editor."""
-        if self._createNewDocument:
-            self.parent().setCurrentDocument(app.openUrl(QUrl()))
         from . import build
-        builder = build.Builder(self)
-        cursor = self.parent().currentView().textCursor()
-        with cursortools.compress_undo(cursor):
-            cursortools.insert_select(cursor, builder.text())
-            indent.re_indent(cursor)
-    
+        builder = build.Builder(self)       # get the builder
+        text = builder.text()               # get the source text
+        lydoc = ly.document.Document(text)  # temporarily store it in a lydoc
+        cursor = ly.document.Cursor(lydoc)  # make a cursor selecting it
+        indent.indenter().indent(cursor)    # indent it according to user prefs
+        doc = app.openUrl(QUrl())           # get a new Frescobaldi document
+        doc.setPlainText(lydoc.plaintext()) # write the text in it
+        doc.setModified(False)              # make it "not modified"
+        self.parent().setCurrentDocument(doc)
     
     def showPreview(self):
         """Shows a preview."""
@@ -195,67 +185,4 @@ class Settings(Page):
         from . import settings
         return settings.SettingsWidget(parent)
 
-
-class scorewiz_help(help.page):
-    def title():
-        return _("The Score Wizard")
-    
-    def body():
-        d = {}
-        d['key'] = help.shortcut(help.action("scorewiz", "scorewiz"))
-        d['menu'] = help.menu(_("menu title", "Tools"), _("Setup New Score..."))
-        return _("""\
-<p>
-The Score Setup Wizard ({key}) in {menu} is designed
-to quickly setup a LilyPond music score.
-</p>
-
-<p>
-In the first tab, <em>Titles and Headers</em>, you can enter titling
-information.
-</p>
-
-<p>
-In the second tab, <em>Parts</em>, you can compose your score out of many
-available part types.
-Doubleclick a part type to add it to your score (or click Add).
-Select the part in the score list to change some settings for the selected part,
-if desired.
-Many parts, especially Choir, have powerful options to set up the score the way
-you want it.
-</p>
-
-<p>
-In the third tab, <em>Score settings</em>, global score properties and
-preferences can be set.
-</p>
-
-<p>
-Click the Preview button to get a preview with some example music filled in.
-Click OK to copy the generated LilyPond source text to the editor.
-</p>
-
-<h3>Multiple pieces or movements</h3>
-
-<p>
-A special and powerful feature of the <em>Parts</em> tab is hidden in the 
-"Containers" category in the part types list.
-</p>
-
-<p>
-This category contains the Score, Book and Bookpart types, with which you
-can setup a LilyPond document containing multiple scores or even books.
-You may add Score, Bookpart or Book entries to the score view.
-They can be nested: a Score can be added to a Bookpart or Book but you can't
-add a Book to a Bookpart or a Score.
-</p>
-
-<p>
-Then you can add musical parts.
-If you want to create multiple scores with exact the same parts, you can just
-add the parts to the top level of the score view, and then the scores, without
-adding musical parts to the scores.
-The scores will then use the parts in the top level of the score.
-</p>
-""").format(**d)
 

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -38,8 +38,13 @@ def _setbackground():
     colors = textformats.formatData('editor').baseColors
     qpopplerview.cache.options().setPaperColor(colors['paper'])
     qpopplerview.cache.clear()
+
 app.settingsChanged.connect(_setbackground, -1)
 _setbackground()
+
+
+# make small sizes smoother
+qpopplerview.cache.options().setOversampleThreshold(96)
 
 
 class View(qpopplerview.View):

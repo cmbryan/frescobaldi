@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,11 +23,15 @@ Builtin snippets.
 
 from __future__ import unicode_literals
 
-import __builtin__
+try:
+    import builtins # py3
+except ImportError:
+    import __builtin__ as builtins # py2
+
 import collections
 
 # postpone translation
-_ = lambda *args: lambda: __builtin__._(*args)
+_ = lambda *args: lambda: builtins._(*args)
 
 
 T = collections.namedtuple("Template", "title text")
@@ -371,6 +375,30 @@ else:
 """),
 
 
+'double': T(_("Double selection or current line"),
+r"""-*- python; indent: no;
+def main():
+    if not cursor.hasSelection():
+        while not cursor.block().text() or cursor.block().text().isspace():
+            if not cursor.movePosition(cursor.PreviousBlock):
+                break
+        cursor.movePosition(cursor.StartOfBlock)
+        if not cursor.movePosition(cursor.NextBlock, cursor.KeepAnchor):
+            cursor.movePosition(cursor.EndOfBlock, cursor.KeepAnchor)
+            t = '\n' + cursor.selection().toPlainText() + '\n'
+        else:
+            t = cursor.selection().toPlainText()
+    else:
+        t = cursor.selection().toPlainText()
+    cursor.movePosition(cursor.selectionEnd())
+    cursor.clearSelection()
+    cursor.insertText(t)
+    if t.endswith('\n'):
+        cursor.movePosition(cursor.Left)
+    return cursor
+"""),
+
+
 'comment': T(_("Comment"),
 r"""-*- python; indent: no;
 # determine state
@@ -463,27 +491,23 @@ if state[-1] != 'paper':
 'document_fonts': T(_("Document Fonts..."),
 r"""-*- menu: paper; name: fo; python; icon: preferences-desktop-font;
 snippet = '''\
-myStaffSize = #{staffsize}
-fonts = #(make-pango-font-tree
+fonts = #
+(make-pango-font-tree
   "{roman}"
   "{sans}"
   "{typewriter}"
-  (/ myStaffSize 20))
+  (/ (* staff-height pt) 2.5))
 '''
 
-import documentinfo
 import globalfontdialog
-size = documentinfo.info(cursor.document()).globalStaffSize()
 dlg = globalfontdialog.GlobalFontDialog(view)
-dlg.setStaffSize(size)
 if dlg.exec_():
     text = snippet.format(
-        staffsize = dlg.staffSize(),
         roman = dlg.romanFont(),
         sans = dlg.sansFont(),
         typewriter = dlg.typewriterFont())
     if state[-1] != "paper":
-       text = "\\paper{\n%s}\n" % text
+        text = "\\paper {{\n{0}}}\n".format(text)
 
 """),
 
@@ -494,16 +518,11 @@ r"""-*- python; menu: music; symbol: note_4d;
 # inserts it again. It removes the octave mark from a note of the first
 # note of a chord if the music is in relative mode.
 
-from PyQt4.QtGui import QTextCursor
-import cursortools
-import tokeniter
+import lydocument
 import ly.lex.lilypond as lp
 
-# look back
-block = cursortools.block(cursor)
-tokens = tokeniter.partition(cursor).left
-
 # space needed before cursor?
+block = cursor.document().findBlock(cursor.selectionStart())
 beforecursor = block.text()[:cursor.selectionStart()-block.position()]
 spaceneeded = bool(beforecursor and beforecursor[-1] not in "\t ")
 
@@ -512,40 +531,34 @@ notestart = None
 relative = False
 found = False
 
-while True:
-    pos = block.position()
-    for t in tokens[::-1]:
-        if t == '\\relative':
-            relative = True
-            break
-        elif isinstance(t, (lp.Score, lp.Book, lp.BookPart, lp.Name)):
-            break
-        if found:
-            continue
-        if chordend is not None:
-            if isinstance(t, lp.ChordStart):
-                chordstart = pos + t.pos
-                found = True
-            continue
-        if isinstance(t, lp.ChordEnd):
-            chordend = pos + t.pos + len(t)
-        elif isinstance(t, lp.Note) and t not in ('R' ,'q', 's', 'r'):
-            notestart = pos + t.pos
-            found = True
-    block = block.previous()
-    if block.isValid():
-        tokens = tokeniter.tokens(block)
+c = lydocument.cursor(cursor)
+runner = lydocument.Runner.at(c, True)
+
+for t in runner.backward():
+    if t == '\\relative':
+        relative = True
+        break
+    elif isinstance(t, (lp.Score, lp.Book, lp.BookPart, lp.Name)):
+        break
+    if found:
         continue
-    break
+    if chordend is not None:
+        if isinstance(t, lp.ChordStart):
+            chordstart = runner.position()
+            found = True
+        continue
+    if isinstance(t, lp.ChordEnd):
+        chordend = runner.position() + len(t)
+    elif isinstance(t, lp.Note) and t not in ('R' ,'q', 's', 'r'):
+        notestart = runner.position()
+        found = True
 
 if found:
-    c = QTextCursor(block)
     if chordstart is not None:
         text = []
         removeOctave = 1 if relative else 0
-        c.setPosition(chordstart)
-        c.setPosition(chordend, c.KeepAnchor)
-        for t in tokeniter.Source.selection(c):
+        c.start, c.end = chordstart, chordend
+        for t in lydocument.Source(c):
             # remove octave from first pitch in relative
             if isinstance(t, lp.Note):
                 removeOctave -= 1
@@ -555,8 +568,8 @@ if found:
         text = ''.join(text)
     elif notestart is not None:
         text = []
-        c.setPosition(notestart)
-        for t in tokeniter.Source.from_cursor(c):
+        c.start, c.end = notestart, None
+        for t in lydocument.Source(c):
             if isinstance(t, lp.Note):
                 text.append(t)
             elif not relative and isinstance(t, lp.Octave):

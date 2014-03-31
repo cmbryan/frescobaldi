@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,7 +30,7 @@ from PyQt4.QtGui import QAction
 import app
 import plugin
 import ly.lex
-import tokeniter
+import lydocument
 import viewhighlighter
 import actioncollection
 import actioncollectionmanager
@@ -42,7 +42,15 @@ class AbstractMatcher(object):
         self._view = lambda: None
         if view:
             self.setView(view)
-    
+        app.settingsChanged.connect(self.updateSettings)
+        self.updateSettings()
+
+    def updateSettings(self):
+        from PyQt4.QtCore import QSettings
+        s = QSettings()
+        s.beginGroup("editor_highlighting")
+        self._match_duration = s.value("match", 1, int) * 1000
+
     def setView(self, view):
         """Set the current View (to monitor for cursor position changes)."""
         old = self._view()
@@ -66,7 +74,7 @@ class AbstractMatcher(object):
         """Highlights matching tokens if the view's cursor is at such a token."""
         cursors = matches(self.view().textCursor(), self.view())
         if cursors:
-            self.highlighter().highlight("match", cursors, 2, 1000)
+            self.highlighter().highlight("match", cursors, 2, self._match_duration)
         else:
             self.highlighter().clear("match")
 
@@ -80,6 +88,7 @@ class Matcher(AbstractMatcher, plugin.MainWindowPlugin):
         ac.view_matching_pair.triggered.connect(self.moveto_match)
         ac.view_matching_pair_select.triggered.connect(self.select_match)
         mainwindow.currentViewChanged.connect(self.setView)
+
         view = mainwindow.currentView()
         if view:
             self.setView(view)
@@ -137,7 +146,8 @@ def matches(cursor, view=None):
     """
     block = cursor.block()
     column = cursor.position() - block.position()
-    tokens = tokeniter.Runner(block)
+    tokens = lydocument.Runner(lydocument.Document(cursor.document()))
+    tokens.move_to_block(block)
     
     if view is not None:
         first_block = view.firstVisibleBlock()
@@ -154,19 +164,21 @@ def matches(cursor, view=None):
             if isinstance(token, ly.lex.MatchStart):
                 match, other = ly.lex.MatchStart, ly.lex.MatchEnd
                 def source_gen():
-                    while tokens.valid() and pred_forward():
+                    while pred_forward():
                         for t in tokens.forward_line():
                             yield t
-                        tokens.next_block()
+                        if not tokens.next_block():
+                            break
                 source = source_gen()
                 break
             elif isinstance(token, ly.lex.MatchEnd):
                 match, other = ly.lex.MatchEnd, ly.lex.MatchStart
                 def source_gen():
-                    while tokens.valid() and pred_backward():
+                    while pred_backward():
                         for t in tokens.backward_line():
                             yield t
-                        tokens.previous_block()
+                        if not tokens.previous_block():
+                            break
                 source = source_gen()
                 break
         elif token.pos > column:

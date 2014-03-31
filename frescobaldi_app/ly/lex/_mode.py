@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -54,27 +54,27 @@ def _modes():
     """
     
     def lilypond():
-        import lilypond
+        from . import lilypond
         return lilypond.ParseGlobal
     
     def scheme():
-        import scheme
+        from . import scheme
         return scheme.ParseScheme
         
     def docbook():
-        import docbook
+        from . import docbook
         return docbook.ParseDocBook
         
     def latex():
-        import latex
+        from . import latex
         return latex.ParseLaTeX
         
     def texinfo():
-        import texinfo
+        from . import texinfo
         return texinfo.ParseTexinfo
         
     def html():
-        import html
+        from . import html
         return html.ParseHTML
         
     # more modes can be added here
@@ -94,21 +94,24 @@ def guessMode(text):
     
     """
     text = text.lstrip()
-    if text.startswith(('%', '\\')) and ("\\documentclass" in text or "\\section" in text):
-        return "latex"
-    elif text.startswith("<<"):
+    if text.startswith(('%', '\\')):
+        if '\\version' in text or '\\relative' in text or '\\score' in text:
+            return "lilypond"
+        if "\\documentclass" in text or "\\begin{document}" in text:
+            return "latex"
         return "lilypond"
-    elif text.startswith("<"):
+    if text.startswith("<<"):
+        return "lilypond"
+    if text.startswith("<"):
         if 'DOCTYPE book' in text or "<programlisting" in text:
             return "docbook"
         else:
             return "html"
-    elif text.startswith(("#!", ";", "(")):
+    if text.startswith(("#!", ";", "(")):
         return "scheme"
-    elif text.startswith('@'):
+    if text.startswith('@'):
         return "texinfo"
-    else:
-        return "lilypond"
+    return "lilypond"
 
 
 

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -124,7 +124,7 @@ class ButtonGroup(QGroupBox):
     
     def actionTriggered(self, name):
         """Called by default when a button is activated."""
-        print "Action triggered:", name # DEBUG
+        print (("Action triggered: {0}").format(name)) # DEBUG
     
     def insertText(self, text, indent=True, blankline=False):
         """Insert text in the current document and focuses the document again.
@@ -140,11 +140,13 @@ class ButtonGroup(QGroupBox):
         cursor = self.mainwindow().textCursor()
         if blankline and not cursor.hasSelection() and not cursortools.isblank_before(cursor):
             text = '\n' + text
+        pos = cursor.selectionStart()
+        cursor.insertText(text)
         if indent and '\n' in text:
+            cursor.setPosition(pos, cursor.KeepAnchor)
             import indent
-            indent.insert_text(cursor, text)
-        else:
-            cursor.insertText(text)
+            with cursortools.compress_undo(cursor, True):
+                indent.re_indent(cursor)
 
 
 class Button(QToolButton):
@@ -186,12 +188,17 @@ class Button(QToolButton):
 
     def editShortcut(self):
         """Edit our shortcut."""
+        from widgets import shortcuteditdialog
         mainwindow = self.parent().mainwindow()
         action = QAction(self.defaultAction().icon(), self.defaultAction().text(), None)
         action.setShortcuts(self.actionCollection().shortcuts(self.objectName()) or [])
-        if actioncollectionmanager.manager(mainwindow).editAction(self, action,
-                self.actionCollection().defaults().get(self.objectName()),
-                self.defaultAction()):
+        default = self.actionCollection().defaults().get(self.objectName())
+        mgr = actioncollectionmanager.manager(mainwindow)
+        skip = (self.actionCollection(), self.objectName())
+        cb = mgr.findShortcutConflict
+        
+        dlg = shortcuteditdialog.ShortcutEditDialog(self, cb, skip)
+        if dlg.editAction(action, default):
+            mgr.removeShortcuts(action.shortcuts())
             self.actionCollection().setShortcuts(self.objectName(), action.shortcuts())
-
-
+        

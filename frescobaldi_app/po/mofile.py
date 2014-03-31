@@ -54,8 +54,8 @@ __all__ = [
 import re
 from struct import unpack
 
-LE_MAGIC = 0x950412deL
-BE_MAGIC = 0xde120495L
+LE_MAGIC = 0x950412de
+BE_MAGIC = 0xde120495
 
 
 class NullMoFile(object):
@@ -261,10 +261,10 @@ def parse_mo_split(buf):
     """
     for msg, tmsg in parse_mo(buf):
         try:
-            context, msg = msg.split('\x04')
+            context, msg = msg.split(b'\x04')
         except ValueError:
             context = None
-        yield context, msg.split('\x00'), tmsg.split('\x00')
+        yield context, msg.split(b'\x00'), tmsg.split(b'\x00')
 
 
 def parse_mo_decode(buf, default_charset="UTF-8"):

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,11 @@ Highlighter for the snippet editor and view.
 
 from __future__ import unicode_literals
 
-import __builtin__
+try:
+    import builtins # py3
+except ImportError:
+    import __builtin__ as builtins # py2
+
 import keyword
 
 from PyQt4.QtGui import QSyntaxHighlighter
@@ -134,7 +138,7 @@ class PyKeyword(Keyword):
     rx = r"\b({0})\b".format('|'.join(keyword.kwlist))
 
 class PyBuiltin(Function):
-    rx = r"\b({0})\b".format('|'.join(__builtin__.__dict__.keys()))
+    rx = r"\b({0})\b".format('|'.join(builtins.__dict__))
 
 class PyStringStartDQ1(String):
     rx = '[uUbB]?"'

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -39,18 +39,17 @@ import language_names
 from widgets.urlrequester import UrlRequester
 
 
-class GeneralPrefs(preferences.GroupsPage):
+class GeneralPrefs(preferences.ScrolledGroupsPage):
     def __init__(self, dialog):
         super(GeneralPrefs, self).__init__(dialog)
 
         layout = QVBoxLayout()
-        self.setLayout(layout)
+        self.scrolledWidget.setLayout(layout)
         
         layout.addWidget(General(self))
-        layout.addStretch(0)
-        layout.addWidget(StartSession(self))
-        layout.addStretch(0)
         layout.addWidget(SavingDocument(self))
+        layout.addWidget(NewDocument(self))
+        layout.addWidget(StartSession(self))
 
 
 class General(preferences.Group):
@@ -209,8 +208,10 @@ class SavingDocument(preferences.Group):
         layout = QVBoxLayout()
         self.setLayout(layout)
         
+        self.stripwsp = QCheckBox(toggled=self.changed)
         self.backup = QCheckBox(toggled=self.changed)
         self.metainfo = QCheckBox(toggled=self.changed)
+        layout.addWidget(self.stripwsp)
         layout.addWidget(self.backup)
         layout.addWidget(self.metainfo)
         
@@ -226,6 +227,10 @@ class SavingDocument(preferences.Group):
         
     def translateUI(self):
         self.setTitle(_("When saving documents"))
+        self.stripwsp.setText(_("Strip trailing whitespace"))
+        self.stripwsp.setToolTip(_(
+            "If checked, Frescobaldi will remove unnecessary whitespace at the "
+            "end of lines (but not inside multi-line strings)."))
         self.backup.setText(_("Keep backup copy"))
         self.backup.setToolTip(_(
             "Frescobaldi always backups a file before overwriting it "
@@ -237,14 +242,78 @@ class SavingDocument(preferences.Group):
         
     def loadSettings(self):
         s = QSettings()
+        self.stripwsp.setChecked(s.value("strip_trailing_whitespace", False, bool))
         self.backup.setChecked(s.value("backup_keep", False, bool))
         self.metainfo.setChecked(s.value("metainfo", True, bool))
         self.basedir.setPath(s.value("basedir", "", type("")))
         
     def saveSettings(self):
         s = QSettings()
+        s.setValue("strip_trailing_whitespace", self.stripwsp.isChecked())
         s.setValue("backup_keep", self.backup.isChecked())
         s.setValue("metainfo", self.metainfo.isChecked())
         s.setValue("basedir", self.basedir.path())
 
+
+class NewDocument(preferences.Group):
+    def __init__(self, page):
+        super(NewDocument, self).__init__(page)
+        
+        grid = QGridLayout()
+        self.setLayout(grid)
+        
+        def changed():
+            self.changed.emit()
+            self.combo.setEnabled(self.template.isChecked())
+        
+        self.emptyDocument = QRadioButton(toggled=changed)
+        self.lilyVersion = QRadioButton(toggled=changed)
+        self.template = QRadioButton(toggled=changed)
+        self.combo = QComboBox(currentIndexChanged=changed)
+        
+        grid.addWidget(self.emptyDocument, 0, 0, 1, 2)
+        grid.addWidget(self.lilyVersion, 1, 0, 1, 2)
+        grid.addWidget(self.template, 2, 0, 1, 1)
+        grid.addWidget(self.combo, 2, 1, 1, 1)
+        self.loadCombo()
+        app.translateUI(self)
+        
+    def translateUI(self):
+        self.setTitle(_("When creating new documents"))
+        self.emptyDocument.setText(_("Create an empty document"))
+        self.lilyVersion.setText(_("Create a document that contains the LilyPond version statement"))
+        self.template.setText(_("Create a document from a template:"))
+        from snippet import snippets
+        for i, name in enumerate(self._names):
+            self.combo.setItemText(i, snippets.title(name))
+    
+    def loadCombo(self):
+        from snippet import snippets
+        self._names = [name for name in snippets.names()
+                        if snippets.get(name).variables.get('template')]
+        self.combo.clear()
+        self.combo.addItems([''] * len(self._names))
+        
+    def loadSettings(self):
+        s = QSettings()
+        ndoc = s.value("new_document", "empty", type(""))
+        template = s.value("new_document_template", "", type(""))
+        if template in self._names:
+            self.combo.setCurrentIndex(self._names.index(template))
+        if ndoc == "template":
+            self.template.setChecked(True)
+        elif ndoc == "version":
+            self.lilyVersion.setChecked(True)
+        else:
+            self.emptyDocument.setChecked(True)
+
+    def saveSettings(self):
+        s = QSettings()
+        if self._names and self.template.isChecked():
+            s.setValue("new_document", "template")
+            s.setValue("new_document_template", self._names[self.combo.currentIndex()])
+        elif self.lilyVersion.isChecked():
+            s.setValue("new_document", "version")
+        else:
+            s.setValue("new_document", "empty")
 

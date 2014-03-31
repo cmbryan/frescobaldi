@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -115,7 +115,7 @@ class InsertMenu(SnippetMenu):
         self.addAction(self.tool().actionCollection.snippettool_activate)
         
     def translateUI(self):
-        self.setTitle(_("&Insert"))
+        self.setTitle(_("menu title", "&Insert"))
     
     def insertBeforeAction(self):
         return self.actions()[-1]
@@ -158,7 +158,7 @@ class TemplateMenu(SnippetMenu):
         from . import snippets
         if 'template-run' in snippets.get(name).variables:
             import engrave
-            engrave.engraver(self.mainwindow()).engrave(True, d)
+            engrave.engraver(self.mainwindow()).engrave('preview', d)
     
     def clearMenu(self):
         """Deletes the actions on menu hide, except "Manage templates..."."""

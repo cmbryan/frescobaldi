@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,11 +23,13 @@ Plucked string part types.
 
 from __future__ import unicode_literals
 
-import __builtin__
-
-from PyQt4.QtGui import QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QSpinBox
+from PyQt4.QtGui import (
+    QCheckBox, QComboBox, QCompleter, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QSpinBox,
+)
 
 import listmodel
+import completionmodel
 import ly.dom
 
 from . import _base
@@ -64,13 +66,19 @@ class TablaturePart(_base.Part):
         self.tuningLabel.setBuddy(self.tuning)
         tunings = [('', lambda: _("Default"))]
         tunings.extend(self.tunings)
+        tunings.append(('', lambda: _("Custom tuning")))
         self.tuning.setModel(listmodel.ListModel(tunings, self.tuning,
             display=listmodel.translate_index(1)))
         self.tuning.setCurrentIndex(1)
+        self.customTuning = QLineEdit(enabled=False)
+        completionmodel.complete(self.customTuning,
+            "scorewiz/completion/plucked_strings/custom_tuning")
+        self.tuning.currentIndexChanged.connect(self.slotCustomTuningEnable)
         box = QHBoxLayout()
         layout.addLayout(box)
         box.addWidget(self.tuningLabel)
         box.addWidget(self.tuning)
+        layout.addWidget(self.customTuning)
     
     def translateWidgets(self):
         self.staffTypeLabel.setText(_("Staff type:"))
@@ -80,6 +88,15 @@ class TablaturePart(_base.Part):
     
     def translateTuningWidgets(self):
         self.tuningLabel.setText(_("Tuning:"))
+        self.customTuning.setToolTip('<qt>' + _(
+            "Select custom tuning in the combobox and "
+            "enter a custom tuning here, e.g. <code>e, a d g b e'</code>. "
+            "Use absolute note names in the same language as you want to use "
+            "in your document (by default: \"nederlands\")."))
+        try:
+            self.customTuning.setPlaceholderText(_("Custom tuning..."))
+        except AttributeError:
+            pass # only in Qt 4.7+
         self.tuning.model().update()
     
     def slotTabEnable(self, enable):
@@ -89,6 +106,13 @@ class TablaturePart(_base.Part):
         
         """
         self.tuning.setEnabled(bool(enable))
+        if enable:
+            self.slotCustomTuningEnable(self.tuning.currentIndex())
+        else:
+            self.customTuning.setEnabled(False)
+    
+    def slotCustomTuningEnable(self, index):
+        self.customTuning.setEnabled(index > len(self.tunings))
     
     def voiceCount(self):
         """Returns the number of voices.
@@ -163,9 +187,16 @@ class TablaturePart(_base.Part):
         data.nodes.append(p)
 
     def setTunings(self, tab):
-        if self.tunings and self.tuning.currentIndex() > 0:
-            tuning = self.tunings[self.tuning.currentIndex() - 1][0]
-            tab.getWith()['stringTunings'] = ly.dom.Scheme(tuning)
+        if self.tunings:
+            i = self.tuning.currentIndex()
+            if i == 0:
+                return
+            elif i > len(self.tunings):
+                value = ly.dom.Text("\\stringTuning <{0}>".format(self.customTuning.text()))
+            else:
+                tuning = self.tunings[self.tuning.currentIndex() - 1][0]
+                value = ly.dom.Scheme(tuning)
+            tab.getWith()['stringTunings'] = value
 
 
 tablatureStaffTypes = (
@@ -178,11 +209,11 @@ tablatureStaffTypes = (
 
 class Mandolin(TablaturePart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Mandolin")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Mandolin", "Mdl.")
     
     midiInstrument = 'acoustic guitar (steel)'
@@ -191,13 +222,31 @@ class Mandolin(TablaturePart):
     )
     
 
+class Ukulele(TablaturePart):
+    @staticmethod
+    def title(_=_base.translate):
+        return _("Ukulele")
+    
+    @staticmethod
+    def short(_=_base.translate):
+        return _("abbreviation for Ukulele", "Uk.")
+    
+    midiInstrument = 'acoustic guitar (steel)'
+    tunings = (
+        ('ukulele-tuning', lambda: _("Ukulele tuning")),
+        ('ukulele-d-tuning', lambda: _("Ukulele D-tuning")),
+        ('tenor-ukulele-tuning', lambda: _("Tenor Ukulele tuning")),
+        ('baritone-ukulele-tuning', lambda: _("Baritone Ukulele tuning")),
+    )
+
+
 class Banjo(TablaturePart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Banjo")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Banjo", "Bj.")
     
     midiInstrument = 'banjo'
@@ -220,30 +269,41 @@ class Banjo(TablaturePart):
         self.fourStrings.setText(_("Four strings (instead of five)"))
     
     def setTunings(self, tab):
-        if not self.fourStrings.isChecked():
+        i = self.tuning.currentIndex()
+        if i > len(self.tunings) or not self.fourStrings.isChecked():
             super(Banjo, self).setTunings(tab)
         else:
             tab.getWith()['stringTunings'] = ly.dom.Scheme(
                 '(four-string-banjo {0})'.format(
-                    self.tunings[self.tuning.currentIndex()][0]))
+                    self.tunings[i][0]))
 
+    def slotCustomTuningEnable(self, index):
+        super(Banjo, self).slotCustomTuningEnable(index)
+        self.fourStrings.setEnabled(index <= len(self.tunings))
+    
 
 class ClassicalGuitar(TablaturePart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Classical guitar")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Classical guitar", "Gt.")
     
     midiInstrument = 'acoustic guitar (nylon)'
     clef = "treble_8"
     tunings = (
         ('guitar-tuning', lambda: _("Guitar tuning")),
+        ('guitar-seven-string-tuning', lambda: _("Guitar seven-string tuning")),
+        ('guitar-drop-d-tuning', lambda: _("Guitar drop-D tuning")),
+        ('guitar-drop-c-tuning', lambda: _("Guitar drop-C tuning")),
         ('guitar-open-g-tuning', lambda: _("Open G-tuning")),
+        ('guitar-open-d-tuning', lambda: _("Guitar open D tuning")),
+        ('guitar-dadgad-tuning', lambda: _("Guitar d-a-d-g-a-d tuning")),
+        ('guitar-lute-tuning', lambda: _("Lute tuning")),
+        ('guitar-asus4-tuning', lambda: _("Guitar A-sus4 tuning")),
     )
-
     def createWidgets(self, layout):
         super(ClassicalGuitar, self).createWidgets(layout)
         self.voicesLabel = QLabel()
@@ -263,11 +323,11 @@ class ClassicalGuitar(TablaturePart):
 
 class JazzGuitar(ClassicalGuitar):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Jazz guitar")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Jazz guitar", "J.Gt.")
     
     midiInstrument = 'electric guitar (jazz)'
@@ -275,11 +335,11 @@ class JazzGuitar(ClassicalGuitar):
 
 class Bass(TablaturePart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Bass")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Bass", "Bs.") #FIXME
 
     midiInstrument = 'acoustic bass'
@@ -287,16 +347,20 @@ class Bass(TablaturePart):
     octave = -2
     tunings = (
         ('bass-tuning', lambda: _("Bass tuning")),
+        ('bass-four-string-tuning', lambda: _("Four-string bass tuning")),
+        ('bass-drop-d-tuning', lambda: _("Bass drop-D tuning")),
+        ('bass-five-string-tuning', lambda: _("Five-string bass tuning")),
+        ('bass-six-string-tuning', lambda: _("Six-string bass tuning")),
     )
 
 
 class ElectricBass(Bass):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Electric bass")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Electric bass", "E.Bs.")
 
     midiInstrument = 'electric bass (finger)'
@@ -304,11 +368,11 @@ class ElectricBass(Bass):
 
 class Harp(_base.PianoStaffPart):
     @staticmethod
-    def title(_=__builtin__._):
+    def title(_=_base.translate):
         return _("Harp")
     
     @staticmethod
-    def short(_=__builtin__._):
+    def short(_=_base.translate):
         return _("abbreviation for Harp", "Hp.")
 
     midiInstrument = 'orchestral harp'
@@ -336,6 +400,7 @@ register(
     [
         Mandolin,
         Banjo,
+        Ukulele,
         ClassicalGuitar,
         JazzGuitar,
         Bass,

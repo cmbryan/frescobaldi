@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2011 - 2012 by Wilbert Berendsen
+# Copyright (c) 2011 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -143,18 +143,28 @@ class Analyzer(object):
 
     def tweak(self):
         """complete property after \\tweak"""
-        if '\\tweak' in self.tokens:
-            tokenclasses = self.tokenclasses()
-            test = [lp.Command, lx.Space, lp.SchemeStart, scm.Quote, scm.Word]
-            if tokenclasses[-3:] == test[:-2] and self.tokens[-3] == '\\tweak':
-                self.column -= 1
-                return completiondata.lilypond_all_grob_properties
-            elif tokenclasses[-4:] == test[:-1] and self.tokens[-4] == '\\tweak':
-                self.column -= 2
-                return completiondata.lilypond_all_grob_properties
-            elif tokenclasses[-5:] == test and self.tokens[-5] == '\\tweak':
-                self.column = self.lastpos - 2
-                return completiondata.lilypond_all_grob_properties
+        try:
+            i = self.tokens.index('\\tweak')
+        except ValueError:
+            return
+        tokens = self.tokens[i+1:]
+        tokenclasses = self.tokenclasses()[i+1:]
+        if tokenclasses == [lx.Space, lp.SchemeStart]:
+            self.column -= 1
+            return completiondata.lilypond_all_grob_properties
+        elif tokenclasses == [lx.Space, lp.SchemeStart, scm.Quote]:
+            self.column -= 2
+            return completiondata.lilypond_all_grob_properties
+        elif tokenclasses[:-1] == [lx.Space, lp.SchemeStart, scm.Quote]:
+            self.column = self.lastpos - 2
+            return completiondata.lilypond_all_grob_properties
+        # 2.18-style [GrobName.]propertyname tweak
+        if lp.GrobName in tokenclasses:
+            self.backuntil(lx.Space, lp.DotPath)
+            return completiondata.lilypond_grob_properties(tokens[1], False)
+        if tokens:
+            self.backuntil(lx.Space)
+            return completiondata.lilypond_all_grob_properties_and_grob_names
 
     def key(self):
         """complete mode argument of '\\key'"""
@@ -342,14 +352,14 @@ class Analyzer(object):
         except ValueError:
             # not found, then complete Contexts and or Grobs
             # (only if we are in the override parser and there's no "=")
-            if isinstance(self.state.parser(), (scm.ParseScheme, scm.ParseSchemeSymbol)):
+            if isinstance(self.state.parser(), scm.ParseScheme):
                 return
-            self.backuntil(lp.DotSetOverride, lx.Space)
+            self.backuntil(lp.DotPath, lx.Space)
             if (isinstance(self.state.parsers()[1], (
                     lp.ParseWith,
                     lp.ParseContext,
                     ))
-                or lp.DotSetOverride in tokenclasses):
+                or lp.DotPath in tokenclasses):
                 return completiondata.lilypond_grobs
             return completiondata.lilypond_contexts_and_grobs
         # yes, there is a GrobName at i
@@ -363,14 +373,26 @@ class Analyzer(object):
         test = [lx.Space, lp.SchemeStart, scm.Quote, scm.Word]
         if tokenclasses[i+1:] == test[:count]:
             return completiondata.lilypond_grob_properties(self.tokens[i])
-
+        self.backuntil(lp.DotPath, lx.Space)
+        return completiondata.lilypond_grob_properties(self.tokens[i], False)
+    
+    def revert(self):
+        """test for \\revert in general music expressions
+        
+        (because the revert parser drops out of invalid constructs, which happen
+        during typing).
+        
+        """
+        if '\\revert' in self.tokens:
+            return self.override()
+    
     def set_unset(self):
         """\\set and \\unset"""
         tokenclasses = self.tokenclasses()
-        self.backuntil(lx.Space, lp.DotSetOverride)
+        self.backuntil(lx.Space, lp.DotPath)
         if lp.ContextProperty in tokenclasses and isinstance(self.last, lx.Space):
             return # fall back to music?
-        elif lp.DotSetOverride in tokenclasses:
+        elif lp.DotPath in tokenclasses:
             return completiondata.lilypond_context_properties
         return completiondata.lilypond_contexts_and_properties
 
@@ -400,6 +422,46 @@ class Analyzer(object):
             cursor = self.document_cursor()
             return documentdata.doc(cursor.document()).schemewords()
     
+    def accidental_style(self):
+        """test for \accidentalStyle"""
+        try:
+            i = self.tokens.index("\\accidentalStyle")
+        except ValueError:
+            return
+        self.backuntil(lx.Space, lp.DotPath)
+        tokens = self.tokens[i+1:]
+        tokenclasses = self.tokenclasses()[i+1:]
+        try:
+            i = tokenclasses.index(lp.AccidentalStyleSpecifier)
+        except ValueError:
+            pass
+        else:
+            if lx.Space in tokenclasses[i+1:]:
+                return
+        if lp.ContextName in tokenclasses:
+            return completiondata.lilypond_accidental_styles
+        return completiondata.lilypond_accidental_styles_contexts
+
+    def hide_omit(self):
+        """test for \omit and \hide"""
+        indices = []
+        for t in "\\omit", "\\hide":
+            try:
+                indices.append(self.tokens.index(t, -6))
+            except ValueError:
+                pass
+        if not indices:
+            return
+        self.backuntil(lx.Space, lp.DotPath)
+        i = max(indices)
+        tokens = self.tokens[i+1:]
+        tokenclasses = self.tokenclasses()[i+1:]
+        if lp.GrobName not in tokenclasses[:-1]:
+            if lp.ContextName in tokenclasses:
+                return completiondata.lilypond_grobs
+            return completiondata.lilypond_contexts_and_grobs
+
+
     # Mapping from Parsers to the lists of functions to run.
     tests = {
         lp.ParseGlobal: (
@@ -421,6 +483,9 @@ class Analyzer(object):
             key,
             clef,
             repeat,
+            accidental_style,
+            hide_omit,
+            revert,
             general_music,
         ),
         lp.ParseNoteMode: (
@@ -429,6 +494,9 @@ class Analyzer(object):
             key,
             clef,
             repeat,
+            accidental_style,
+            hide_omit,
+            revert,
             general_music,
         ),
         lp.ParseMarkup: (
@@ -441,6 +509,8 @@ class Analyzer(object):
             paper,
         ),
         lp.ParseLayout: (
+            accidental_style,
+            hide_omit,
             layout,
         ),
         lp.ParseMidi: (
@@ -474,6 +544,12 @@ class Analyzer(object):
         lp.ParseUnset: (
             set_unset,
         ),
+        lp.ParseTweak: (
+            tweak,
+        ),
+        lp.ParseTweakGrobProperty: (
+            tweak,
+        ),
         lp.ParseString: (
             engraver,
             clef,
@@ -494,19 +570,26 @@ class Analyzer(object):
             markup_override,
             scheme_other,
         ),
-        scm.ParseSchemeSymbol: (
-            override,
-            tweak,
-            markup_override,
-            scheme_other,
-        ),
         scm.ParseString: (
             music_glyph,
             midi_instrument,
             font_name,
         ),
         lp.ParseLyricMode: (
+            repeat,
             lyricmode,
-        )
+        ),
+        lp.ParseAccidentalStyle: (
+            accidental_style,
+        ),
+        lp.ParseScriptAbbreviationOrFingering: (
+            accidental_style,
+        ),
+        lp.ParseHideOmit: (
+            hide_omit,
+        ),
+        lp.ParseGrobPropertyPath: (
+            revert,
+        ),
     }
 

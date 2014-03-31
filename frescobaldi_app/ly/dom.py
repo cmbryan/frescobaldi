@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -99,14 +99,14 @@ class Container(LyNode):
     
     @property
     def before(self):
-        if self.children():
+        if len(self):
             return self[0].before
         else:
             return 0
 
     @property
     def after(self):
-        if self.children():
+        if len(self):
             return self[-1].after
         else:
             return 0
@@ -761,7 +761,7 @@ class Duration(Leaf):
         self.factor = fractions.Fraction(factor)
 
     def ly(self, printer):
-        return ly.duration.duration(self.dur, self.dots, self.factor)
+        return ly.duration.tostring(self.dur, self.dots, self.factor)
 
 
 class Chord(Container):
@@ -845,6 +845,8 @@ class Tempo(Container):
     A tempo setting, like: \\tempo 4 = 100
     May have a child markup or quoted string.
     """
+    before, after = 1, 1
+    
     def __init__(self, duration, value, parent=None):
         super(Tempo, self).__init__(parent)
         self.duration = duration

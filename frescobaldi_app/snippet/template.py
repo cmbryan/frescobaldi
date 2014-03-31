@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -76,7 +76,9 @@ def save(mainwindow):
     # add header line, if it is lilypond, enable autorun
     headerline = '-*- template; indent: no;'
     if documentinfo.mode(cursor.document()) == 'lilypond':
-        headerline += ' template-run;'
+        dinfo = documentinfo.docinfo(cursor.document())
+        if dinfo.complete() and dinfo.has_output():
+            headerline += ' template-run;'
     text = headerline + '\n' + text
     
     # save the new snippet

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -74,6 +74,15 @@ else:
         """Returns True if the paths are equal."""
         return p1 == p2
         
+
+# Make sure that also on Windows, directory slashes remain forward
+if os.name == 'nt':
+    def normpath(path):
+        """A version of os.path.normpath that keeps slashes forward."""
+        return os.path.normpath(path).replace('\\', '/')
+else:
+    normpath = os.path.normpath
+
 
 def homify(path):
     """Replaces the homedirectory (if present) in the path with a tilde (~)."""
@@ -155,6 +164,24 @@ def filenamesort(filename):
     """Return a key for sorting filenames."""
     name, ext = os.path.splitext(filename)
     return naturalsort(name), ext
+
+
+def next_file(filename):
+    """Return a similar filename with e.g. "-1" added before the extension.
+    
+    If there is already a "-n" before the extension, where n is a number,
+    the number is increased by one.
+    
+    """
+    name, ext = os.path.splitext(filename)
+    try:
+        a, b = name.rsplit('-', 1)
+        num = int(b)
+    except ValueError:
+        name += '-1'
+    else:
+        name = a + '-' + format(num+1)
+    return name + ext
 
 
 def bytes_environ(encoding='latin1'):

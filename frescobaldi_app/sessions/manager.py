@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -88,8 +88,11 @@ class SessionManager(plugin.MainWindowPlugin):
         if name == sessions.currentSession():
             return
         if self.mainwindow().queryClose():
-            active = sessions.loadSession(name) or document.Document()
-            self.mainwindow().setCurrentDocument(active)
+            active = sessions.loadSession(name)
+            if active:
+                self.mainwindow().setCurrentDocument(active)
+            else:
+                self.mainwindow().cleanStart()
         
     def saveCurrentSessionIfDesired(self):
         """Saves the current session if it is configured to save itself on exit."""

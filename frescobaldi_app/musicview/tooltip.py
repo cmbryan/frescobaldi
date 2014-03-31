@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -35,6 +35,9 @@ def text(cursor):
     definition = get_definition(cursor)
     if definition:
         text += '\n' + definition
+    time_pos = time_position(cursor)
+    if time_pos:
+        text += '\n' + _("Position: {pos}").format(pos=time_pos)
     return text
 
 def get_definition(cursor):
@@ -48,5 +51,12 @@ def get_definition(cursor):
                 elif isinstance(t, ly.lex.lilypond.Keyword) and t == '\\score':
                     return '\\score'
         block = block.previous()
+
+def time_position(cursor):
+    import documentinfo
+    pos = documentinfo.music(cursor.document()).time_position(cursor.position())
+    if pos is not None:
+        import ly.duration
+        return ly.duration.format_fraction(pos)
 
 

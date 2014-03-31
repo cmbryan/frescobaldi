@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,10 @@ Frescobaldi main menu.
 
 from __future__ import unicode_literals
 
-import __builtin__
+try:
+    import builtins # py3
+except ImportError:
+    import __builtin__ as builtins # py2
 
 from PyQt4.QtGui import QMenu
 
@@ -43,29 +46,34 @@ import scorewiz
 import autocomplete
 import sidebar
 import matcher
+import file_import
+import file_export
+import browseriface
+import vcs
 
 
 # postpone translation
-_ = lambda *args: lambda: __builtin__._(*args)
+_ = lambda *args: lambda: builtins._(*args)
 
 
 def createMenus(mainwindow):
     """Adds all the menus to the mainwindow's menubar."""
     m = mainwindow.menuBar()
-    for f in (
-        menu_file,
-        menu_edit,
-        menu_view,
-        menu_music,
-        menu_insert,
-        menu_lilypond,
-        menu_tools,
-        menu_document,
-        menu_window,
-        menu_session,
-        menu_help,
-    ):
-        m.addMenu(f(mainwindow))
+    
+    m.addMenu(menu_file(mainwindow))
+    m.addMenu(menu_edit(mainwindow))
+    m.addMenu(menu_view(mainwindow))
+    m.addMenu(menu_music(mainwindow))
+    m.addMenu(menu_insert(mainwindow))
+    m.addMenu(menu_lilypond(mainwindow))
+    m.addMenu(menu_tools(mainwindow))
+    m.addMenu(menu_document(mainwindow))
+    m.addMenu(menu_window(mainwindow))
+    m.addMenu(menu_session(mainwindow))
+    if vcs.app_is_git_controlled():
+        from vcs.menu import GitMenu
+        m.addMenu(GitMenu(mainwindow))
+    m.addMenu(menu_help(mainwindow))
 
 
 class Menu(QMenu):
@@ -85,13 +93,12 @@ def menu_file(mainwindow):
     ac = mainwindow.actionCollection
     
     m.addAction(ac.file_new)
+    m.addAction(scorewiz.ScoreWizard.instance(mainwindow).actionCollection.scorewiz)
     m.addMenu(snippet.menu.TemplateMenu(mainwindow))
-    m.addAction(scorewiz.ScoreWizard.instance(mainwindow).actionCollection.newwithwiz)
     m.addSeparator()
     m.addAction(ac.file_open)
     m.addAction(ac.file_open_recent)
     m.addAction(ac.file_insert_file)
-    m.addAction(documentactions.get(mainwindow).actionCollection.file_open_file_at_cursor)
     m.addSeparator()
     m.addAction(ac.file_save)
     m.addAction(ac.file_save_as)
@@ -103,22 +110,37 @@ def menu_file(mainwindow):
     m.addAction(ac.file_reload_all)
     m.addAction(ac.file_external_changes)
     m.addSeparator()
+    m.addMenu(menu_file_import(mainwindow))
+    m.addMenu(menu_file_export(mainwindow))
+    m.addSeparator()
     m.addAction(panelmanager.manager(mainwindow).musicview.actionCollection.music_print)
     m.addAction(ac.file_print_source)
-    m.addMenu(menu_file_export(mainwindow))
     m.addSeparator()
     m.addAction(ac.file_close)
     m.addAction(ac.file_close_other)
     m.addAction(ac.file_close_all)
     m.addSeparator()
     m.addAction(ac.file_quit)
+    if vcs.app_is_git_controlled():
+        m.addAction(ac.file_restart)
+    return m
+
+
+def menu_file_import(mainwindow):
+    m = Menu(_("submenu title", "&Import"), mainwindow)
+    ac = file_import.FileImport.instance(mainwindow).actionCollection
+    
+    m.addAction(ac.import_musicxml)
     return m
 
 
 def menu_file_export(mainwindow):
     m = Menu(_("submenu title", "&Export"), mainwindow)
     ac = mainwindow.actionCollection
+    acfe = file_export.FileExport.instance(mainwindow).actionCollection
     
+    if vcs.app_is_git_controlled():
+        m.addAction(acfe.export_musicxml)
     m.addAction(ac.export_colored_html)
     return m
     
@@ -157,9 +179,15 @@ def menu_view(mainwindow):
     m.addAction(ac.view_next_document)
     m.addAction(ac.view_previous_document)
     m.addSeparator()
+    m.addAction(ac.view_wrap_lines)
     m.addAction(documentactions.get(mainwindow).actionCollection.view_highlighting)
     m.addAction(sidebar.SideBarManager.instance(mainwindow).actionCollection.view_linenumbers)
     m.addMenu(menu_view_folding(mainwindow))
+    m.addSeparator()
+    m.addAction(documentactions.get(mainwindow).actionCollection.view_goto_file_or_definition)
+    ac = browseriface.get(mainwindow).actionCollection
+    m.addAction(ac.go_back)
+    m.addAction(ac.go_forward)
     m.addSeparator()
     ac = matcher.Matcher.instance(mainwindow).actionCollection
     m.addAction(ac.view_matching_pair)
@@ -225,13 +253,17 @@ def menu_lilypond(mainwindow):
     ac = engrave.engraver(mainwindow).actionCollection
     
     m.addAction(ac.engrave_sticky)
+    m.addAction(ac.engrave_autocompile)
     m.addSeparator()
     m.addAction(ac.engrave_preview)
     m.addAction(ac.engrave_publish)
+    m.addAction(ac.engrave_debug)
     m.addAction(ac.engrave_custom)
     m.addAction(ac.engrave_abort)
     m.addSeparator()
     m.addMenu(menu_lilypond_generated_files(mainwindow))
+    m.addSeparator()
+    m.addAction(ac.engrave_show_available_fonts)
     return m
 
 
@@ -242,12 +274,11 @@ def menu_lilypond_generated_files(mainwindow):
 def menu_tools(mainwindow):
     m = Menu(_('menu title', '&Tools'), mainwindow)
     
-    m.addAction(scorewiz.ScoreWizard.instance(mainwindow).actionCollection.scorewiz)
-    m.addSeparator()
     ac = documentactions.get(mainwindow).actionCollection
     m.addAction(ac.tools_indent_auto)
     m.addAction(ac.tools_indent_indent)
     m.addAction(ac.tools_reformat)
+    m.addAction(ac.tools_remove_trailing_whitespace)
     m.addSeparator()
     ac = autocomplete.CompleterManager.instance(mainwindow).actionCollection
     m.addAction(ac.autocomplete)
@@ -256,6 +287,7 @@ def menu_tools(mainwindow):
     m.addMenu(menu_tools_pitch(mainwindow))
     m.addMenu(menu_tools_rhythm(mainwindow))
     m.addMenu(menu_tools_lyrics(mainwindow))
+    m.addMenu(menu_tools_quick_remove(mainwindow))
     m.addSeparator()
     ac = documentactions.get(mainwindow).actionCollection
     m.addAction(ac.tools_convert_ly)
@@ -305,6 +337,7 @@ def menu_tools_rhythm(mainwindow):
     m.addAction(ac.rhythm_undot)
     m.addSeparator()
     m.addAction(ac.rhythm_remove_scaling)
+    m.addAction(ac.rhythm_remove_fraction_scaling)
     m.addAction(ac.rhythm_remove)
     m.addSeparator()
     m.addAction(ac.rhythm_implicit)
@@ -314,6 +347,20 @@ def menu_tools_rhythm(mainwindow):
     m.addAction(ac.rhythm_apply)
     m.addAction(ac.rhythm_copy)
     m.addAction(ac.rhythm_paste)
+    return m
+
+
+def menu_tools_quick_remove(mainwindow):
+    m = Menu(_('submenu title', "&Quick Remove"), mainwindow)
+    m.setIcon(icons.get('edit-clear'))
+    ac = documentactions.DocumentActions.instance(mainwindow).actionCollection
+    
+    m.addAction(ac.tools_quick_remove_articulations)
+    m.addAction(ac.tools_quick_remove_ornaments)
+    m.addAction(ac.tools_quick_remove_instrument_scripts)
+    m.addAction(ac.tools_quick_remove_slurs)
+    m.addAction(ac.tools_quick_remove_dynamics)
+    m.addAction(ac.tools_quick_remove_markup)
     return m
 
 

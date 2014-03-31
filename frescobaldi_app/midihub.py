@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -79,6 +79,15 @@ def output_ports():
                 names.append(i.name)
     return names
 
+def input_ports():
+    """Returns a list of all the output port names."""
+    names = []
+    if available():
+        for i in device_infos():
+            if i.isinput:
+                names.append(i.name)
+    return names
+
 def default_output():
     """Returns a probably suitable default MIDI output port name."""
     names = []
@@ -90,12 +99,30 @@ def default_output():
                     return i.name
     return names[0] if names else ""
 
+def default_input():
+    """Returns a probably suitable default MIDI output port name."""
+    names = []
+    if available():
+        for i in device_infos():
+            if i.isinput:
+                names.append(i.name)
+                if 'through' not in i.name.lower():
+                    return i.name
+    return names[0] if names else ""
+
 def output_by_name(name):
     """Returns a portmidi.Output instance for name."""
     for n in range(get_count()):
         i = portmidi.get_device_info(n)
         if i.isoutput and i.name.startswith(name) and not i.isopen:
             return portmidi.Output(n)
+
+def input_by_name(name):
+    """Returns a portmidi.Output instance for name."""
+    for n in range(get_count()):
+        i = portmidi.get_device_info(n)
+        if i.isinput and i.name.startswith(name) and not i.isopen:
+            return portmidi.Input(n)
 
 # allow the MIDI player to run on python time if portmidi is not available:
 if available():

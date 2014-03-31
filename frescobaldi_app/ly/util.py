@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -65,7 +65,7 @@ _roman_numerals = (("M", 1000), ("CM", 900), ("D", 500), ("CD", 400),
 
 def int2roman(n):
     if n < 1:
-        raise ValueError, 'Roman numerals must be positive integers, got %s' %n
+        raise ValueError('Roman numerals must be positive integers, got %s' % n)
     roman = []
     for ltr, num in _roman_numerals:
         k, n = divmod(n, num)

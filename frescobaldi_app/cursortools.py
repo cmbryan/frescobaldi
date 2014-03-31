@@ -1,6 +1,6 @@
 # cursortools.py -- QTextCursor utility functions
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,6 +24,7 @@ Functions manipulating QTextCursors and their selections.
 from __future__ import unicode_literals
 
 import contextlib
+import operator
 
 from PyQt4.QtGui import QTextBlock, QTextBlockUserData, QTextCursor
 
@@ -238,62 +239,5 @@ def data(block):
         data = QTextBlockUserData()
         block.setUserData(data)
     return data
-
-
-class Editor(object):
-    """A context manager that stores edits until it is exited.
-    
-    Usage:
-    
-    with Editor() as e:
-        e.insertText(cursor, "text")
-        e.removeSelectedText(cursor)
-        # ... etc
-    # when the code block ends, the edits will be done.
-    
-    All cursors should belong to the same text document.
-    The edits will not be applied if the context is exited with an exception.
-    
-    """
-    def __init__(self):
-        self.edits = []
-    
-    def __enter__(self):
-        return self
-    
-    def insertText(self, cursor, text):
-        """Stores an insertText operation."""
-        self.edits.append((cursor, text))
-    
-    def removeSelectedText(self, cursor):
-        """Stores a removeSelectedText operation."""
-        self.edits.append((cursor, ""))
-    
-    def apply(self):
-        """Applies and clears the stored edits."""
-        if self.edits:
-            # don't use all the cursors directly, but copy and sort the ranges
-            # otherwise inserts would move the cursor for adjacent edits.
-            # We could also just start with the first, but that would require
-            # all cursors to update their position during the process, which
-            # notably slows down large edits (as there are already many cursors
-            # used by the point and click feature).
-            # We could also use QTextCursor.keepPositionOnInsert but that is
-            # only available in the newest PyQt4 versions.
-            edits = [(cursor.selectionStart(), cursor.selectionEnd(), text)
-                      for cursor, text in self.edits]
-            edits.sort(key=lambda e: e[0]) # dont reorder edits at same startpos
-            edits.reverse()
-            cursor = self.edits[0][0]
-            del self.edits[:]
-            with compress_undo(cursor):
-                for start, end, text in edits:
-                    cursor.setPosition(end)
-                    cursor.setPosition(start, QTextCursor.KeepAnchor)
-                    cursor.insertText(text)
-        
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            self.apply()
 
 

@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2011 - 2012 by Wilbert Berendsen
+# Copyright (c) 2011 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -67,18 +67,22 @@ class Pitch(plugin.MainWindowPlugin):
     def transpose(self):
         from . import pitch
         cursor = self.mainwindow().textCursor()
-        pitch.transpose(cursor, self.mainwindow())
+        transposer = pitch.getTransposer(cursor.document(), self.mainwindow())
+        if transposer:
+            pitch.transpose(cursor, transposer, self.mainwindow())
     
     def modalTranspose(self):
         from . import pitch
         cursor = self.mainwindow().textCursor()
-        pitch.modalTranspose(cursor, self.mainwindow())
+        transposer = pitch.getModalTransposer(cursor.document(), self.mainwindow())
+        if transposer:
+            pitch.transpose(cursor, transposer, self.mainwindow())
     
     def setLanguageMenu(self):
         """Called when the menu is shown; selects the correct language."""
         import documentinfo
         doc = self.mainwindow().currentDocument()
-        lang = documentinfo.info(doc).pitchLanguage() or 'nederlands'
+        lang = documentinfo.docinfo(doc).language() or 'nederlands'
         for a in self.language_group.actions():
             if a.objectName() == lang:
                 a.setChecked(True)

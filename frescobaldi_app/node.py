@@ -1,6 +1,6 @@
 # node.py -- Node is a list-like type to build tree structures with
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,6 +30,19 @@ Object Model) for building a tree structure.
 A Node has children with list-like access methods and keeps also a reference to
 its parent. A Node can have one parent; appending a Node to another Node causes
 it to be removed from its parent node (if any).
+
+To iterate over the children of a Node:
+
+    for n in node:
+        do_something(n)
+
+To get the list of children of a Node:
+
+    children = list(node)
+
+Of course you can get the children directly using:
+
+    child = node[3]
 
 You should inherit from Node to make meaningful tree node types, e.g. to add
 custom attributes or multiple sub-types.
@@ -66,10 +79,6 @@ class Node(object):
     def parent(self):
         """The parent, or None if the node has no parent."""
         return self._parent
-
-    def children(self):
-        """Our children, may be an empty list."""
-        return list(self._children)
 
     def index(self, node):
         """Return the index of the given child node."""
@@ -109,6 +118,8 @@ class Node(object):
     def __nonzero__(self):
         """We are always true."""
         return True
+    
+    __bool__ = __nonzero__
     
     def __len__(self):
         """Return the number of children."""
@@ -198,48 +209,42 @@ class Node(object):
             yield node
             node = node.parent()
 
-    def previous(self):
+    def previous_sibling(self):
         """Return the sibling object just before us in our parents list.
         
         Returns None if this is the first child, or if we have no parent.
         
         """
-        parent = self.parent()
-        if parent:
-            i = parent.index(self)
-            if i > 0:
-                return parent[i-1]
+        for i in self.backward():
+            return i
 
-    def next(self):
+    def next_sibling(self):
         """Return the sibling object just after us in our parents list.
         
         Returns None if this is the last child, or if we have no parent.
         
         """
-        parent = self.parent()
-        if parent:
-            i = parent.index(self)
-            if i < len(parent) - 1:
-                return parent[i+1]
+        for i in self.forward():
+            return i
 
     def backward(self):
         """Iterate (backwards) over the preceding siblings."""
-        node = self.previous()
-        while node:
-            yield node
-            node = node.previous()
+        parent = self.parent()
+        if parent:
+            i = parent.index(self)
+            return iter(parent[i-1::-1])
 
     def forward(self):
         """Iterate over the following siblings."""
-        node = self.next()
-        while node:
-            yield node
-            node = node.next()
+        parent = self.parent()
+        if parent:
+            i = parent.index(self)
+            return iter(parent[i+1::])
 
-    def is_descendant(self, node):
-        """Return True if node is somewhere in our ancestors(), else False."""
+    def is_descendant_of(self, parent):
+        """Return True if self is a descendant of parent, else False."""
         for n in self.ancestors():
-            if n is node:
+            if n is parent:
                 return True
         return False
 
@@ -251,7 +256,11 @@ class Node(object):
             node = parent
             parent = node.parent()
         return node
-
+    
+    def descendants(self, depth = -1):
+        """Yield all the descendants, in tree order. Same as iter_depth()."""
+        return self.iter_depth(depth)
+    
     def iter_depth(self, depth = -1):
         """Iterate over all the children, and their children, etc.
         
@@ -267,35 +276,68 @@ class Node(object):
     def iter_rings(self, depth = -1):
         """Iterate over the children in rings, depth last.
         
+        This method returns the closest descendants first.
         Set depth to restrict the search to a certain depth, -1 is unrestricted.
         
         """
-        children = self.children()
+        children = list(self)
         while children and depth:
             depth -= 1
             newchildren = []
             for i in children:
                 yield i
-                newchildren.extend(i.children())
+                newchildren.extend(i)
             children = newchildren
 
+    def find(self, cls, depth = -1):
+        """Yield all descendants if they are an instance of cls.
+        
+        cls may also be a tuple of classes. This method uses iter_depth().
+        
+        """
+        for node in self.iter_depth(depth):
+            if isinstance(node, cls):
+                yield node
+        
     def find_children(self, cls, depth = -1):
-        """Yield all descendants if they are an instance of cls."""
+        """Yield all descendants if they are an instance of cls.
+        
+        cls may also be a tuple of classes. This method uses iter_rings().
+        
+        """
         for node in self.iter_rings(depth):
             if isinstance(node, cls):
                 yield node
 
     def find_child(self, cls, depth = -1):
-        """Return the first descendant that's an instance of cls."""
+        """Return the first descendant that's an instance of cls.
+        
+        cls may also be a tuple of classes. This method uses iter_rings().
+        
+        """
         for node in self.iter_rings(depth):
             if isinstance(node, cls):
                 return node
     
     def find_parent(self, cls):
-        """Find an ancestor of the given class."""
+        """Find an ancestor that's an instance of the given class.
+        
+        cls may also be a tuple of classes.
+        
+        """
         for node in self.ancestors():
             if isinstance(node, cls):
                 return node
+    
+    def dump(self):
+        """Return a string representation of the tree."""
+        def line(obj, indent):
+            yield indent * "  " + repr(obj)
+            for c in obj:
+                for l in line(c, indent + 1):
+                    yield l
+        return '\n'.join(line(self, 0))
+
 
 
 class WeakNode(Node):

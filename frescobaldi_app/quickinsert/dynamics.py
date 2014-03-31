@@ -1,6 +1,6 @@
 # This file is part of the Frescobaldi project, http://www.frescobaldi.org/
 #
-# Copyright (c) 2008 - 2012 by Wilbert Berendsen
+# Copyright (c) 2008 - 2014 by Wilbert Berendsen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,12 +23,18 @@ The Quick Insert panel dynamics Tool.
 
 from __future__ import unicode_literals
 
+from PyQt4.QtGui import QHBoxLayout, QToolButton
+
 import app
+import icons
 import symbols
 import cursortools
 import tokeniter
-import music
+import lydocument
+import ly.document
 import ly.lex.lilypond
+import ly.rhythm
+import documentactions
 
 from . import tool
 from . import buttongroup
@@ -38,6 +44,23 @@ class Dynamics(tool.Tool):
     """Dynamics tool in the quick insert panel toolbox."""
     def __init__(self, panel):
         super(Dynamics, self).__init__(panel)
+        self.removemenu = QToolButton(self,
+            autoRaise=True,
+            popupMode=QToolButton.InstantPopup,
+            icon=icons.get('edit-clear'))
+        
+        mainwindow = panel.parent().mainwindow()
+        mainwindow.selectionStateChanged.connect(self.removemenu.setEnabled)
+        self.removemenu.setEnabled(mainwindow.hasSelection())
+        
+        ac = documentactions.DocumentActions.instance(mainwindow).actionCollection
+        self.removemenu.addAction(ac.tools_quick_remove_dynamics)
+        
+        layout = QHBoxLayout()
+        layout.addWidget(self.removemenu)
+        layout.addStretch(1)
+        
+        self.layout().addLayout(layout)
         self.layout().addWidget(DynamicGroup(self))
         self.layout().addWidget(SpannerGroup(self))
         self.layout().addStretch(1)
@@ -71,16 +94,19 @@ class Group(buttongroup.ButtonGroup):
             left = tokeniter.partition(cursor).left
             if not left or not isinstance(left[-1], ly.lex.lilypond.Dynamic):
                 # no, find the first pitch
-                source = tokeniter.Source.from_cursor(cursor, True, -1)
-                for p in music.music_items(source):
+                c = lydocument.cursor(cursor)
+                c.end = None
+                source = lydocument.Source(c, True, ly.document.OUTSIDE, True)
+                for p in ly.rhythm.music_tokens(source):
                     cursor = source.cursor(p[-1], start=len(p[-1]))
                     break
             cursor.insertText(direction + dynamic)
             self.mainwindow().currentView().setTextCursor(cursor)
         else:
-            source = tokeniter.Source.selection(cursor, True)
+            c = lydocument.cursor(cursor)
+            source = lydocument.Source(c, True, tokens_with_position=True)
             cursors = [source.cursor(p[-1], start=len(p[-1]))
-                for p in music.music_items(source)]
+                for p in ly.rhythm.music_tokens(source)]
             if not cursors:
                 return
             c1, c2 = cursors[0], cursors[-1]
